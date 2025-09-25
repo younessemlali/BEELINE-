@@ -1,0 +1,56 @@
+# REQUIREMENTS.TXT
+# Dépendances pour l'application Beeline - Rapprochement PDF/Excel
+# Compatible avec Streamlit Cloud et déploiements Python 3.9+
+
+# Interface web Streamlit
+streamlit>=1.28.0
+
+# Traitement des données
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Extraction PDF
+pdfplumber>=0.9.0
+PyPDF2>=3.0.0
+
+# Traitement Excel
+openpyxl>=3.1.0
+xlrd>=2.0.0
+
+# Graphiques et visualisations
+plotly>=5.17.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Utilitaires de base
+python-dateutil>=2.8.0
+regex>=2023.0.0
+
+# Logging et monitoring
+loguru>=0.7.0
+
+# API et communication (optionnel pour emails)
+requests>=2.31.0
+smtplib-ssl>=1.0.0
+
+# Traitement de texte avancé
+fuzzywuzzy>=0.18.0
+python-Levenshtein>=0.21.0
+
+# Formats de données
+jsonschema>=4.19.0
+
+# Tests et développement (optionnel)
+pytest>=7.4.0
+pytest-streamlit>=1.0.0
+
+# Sécurité et validation
+validators>=0.22.0
+
+# Performance (optionnel)
+numba>=0.58.0
+
+# Interface utilisateur améliorée
+streamlit-aggrid>=0.3.4
+streamlit-option-menu>=0.3.6
+streamlit-extras>=0.3.0
