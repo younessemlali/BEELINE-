@@ -29,9 +29,8 @@ regex>=2023.0.0
 # Logging et monitoring
 loguru>=0.7.0
 
-# API et communication (optionnel pour emails)
+# API et communication
 requests>=2.31.0
-smtplib-ssl>=1.0.0
 
 # Traitement de texte avancé
 fuzzywuzzy>=0.18.0
