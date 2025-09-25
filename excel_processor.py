@@ -377,3 +377,437 @@ class ExcelProcessor:
             
             # Correspondance exacte
             if col_lower == expected_lower:
+                return 1.0
+            
+            # Correspondance partielle
+            if expected_lower in col_lower or col_lower in expected_lower:
+                partial_score = min(len(expected_lower), len(col_lower)) / max(len(expected_lower), len(col_lower))
+                max_score = max(max_score, partial_score * 0.9)
+            
+            # Correspondance par mots-clés
+            expected_words = expected_lower.split()
+            col_words = col_lower.split()
+            
+            matching_words = sum(1 for word in expected_words if word in col_words)
+            if matching_words > 0:
+                word_score = matching_words / max(len(expected_words), len(col_words))
+                max_score = max(max_score, word_score * 0.8)
+        
+        return max_score
+    
+    def rename_columns(self, df: pd.DataFrame, mapping: Dict[str, str]) -> pd.DataFrame:
+        """
+        Renomme les colonnes du DataFrame selon le mapping
+        
+        Args:
+            df: DataFrame à traiter
+            mapping: Dictionnaire de mapping
+            
+        Returns:
+            DataFrame avec colonnes renommées
+        """
+        df_renamed = df.copy()
+        df_renamed = df_renamed.rename(columns=mapping)
+        
+        # Log des mappings effectués
+        for original, standard in mapping.items():
+            self.logger.info(f"Colonne mappée: '{original}' -> '{standard}'")
+        
+        return df_renamed
+    
+    def validate_dataframe(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Valide un DataFrame complet
+        
+        Args:
+            df: DataFrame à valider
+            
+        Returns:
+            Résultats de validation
+        """
+        validation_results = {
+            'total_rows': len(df),
+            'valid_rows': 0,
+            'invalid_rows': 0,
+            'validation_errors': [],
+            'field_validations': {},
+            'data_quality_score': 0
+        }
+        
+        # Validation ligne par ligne
+        valid_count = 0
+        for index, row in df.iterrows():
+            row_validation = self.validate_row(row, index)
+            if row_validation['is_valid']:
+                valid_count += 1
+            else:
+                validation_results['validation_errors'].extend(row_validation['errors'])
+        
+        validation_results['valid_rows'] = valid_count
+        validation_results['invalid_rows'] = len(df) - valid_count
+        
+        # Score de qualité global
+        if len(df) > 0:
+            validation_results['data_quality_score'] = (valid_count / len(df)) * 100
+        
+        # Validation des colonnes critiques
+        critical_columns = ['order_number', 'net_amount']
+        for col in critical_columns:
+            if col in df.columns:
+                col_validation = self.validate_column(df[col], col)
+                validation_results['field_validations'][col] = col_validation
+        
+        return validation_results
+    
+    def validate_row(self, row: pd.Series, row_index: int) -> Dict[str, Any]:
+        """
+        Valide une ligne individuelle
+        
+        Args:
+            row: Ligne à valider
+            row_index: Index de la ligne
+            
+        Returns:
+            Résultats de validation pour la ligne
+        """
+        validation = {
+            'is_valid': True,
+            'errors': [],
+            'warnings': []
+        }
+        
+        # Validation du numéro de commande
+        if 'order_number' in row:
+            order_validation = self.validate_order_number(row['order_number'])
+            if not order_validation['valid']:
+                validation['is_valid'] = False
+                validation['errors'].extend([f"Ligne {row_index}: {err}" for err in order_validation['errors']])
+        
+        # Validation du montant
+        if 'net_amount' in row:
+            amount_validation = self.validate_amount(row['net_amount'])
+            if not amount_validation['valid']:
+                validation['errors'].extend([f"Ligne {row_index}: {err}" for err in amount_validation['errors']])
+        
+        # Validation de la date
+        if 'statement_date' in row and pd.notna(row['statement_date']):
+            date_validation = self.validate_date_field(row['statement_date'])
+            if not date_validation['valid']:
+                validation['warnings'].extend([f"Ligne {row_index}: {err}" for err in date_validation['errors']])
+        
+        return validation
+    
+    def validate_column(self, series: pd.Series, column_name: str) -> Dict[str, Any]:
+        """
+        Valide une colonne complète
+        
+        Args:
+            series: Colonne à valider
+            column_name: Nom de la colonne
+            
+        Returns:
+            Résultats de validation
+        """
+        validation = {
+            'column_name': column_name,
+            'total_values': len(series),
+            'valid_values': 0,
+            'invalid_values': 0,
+            'null_values': series.isna().sum(),
+            'unique_values': series.nunique(),
+            'validation_rate': 0
+        }
+        
+        valid_count = 0
+        for value in series.dropna():
+            if column_name == 'order_number':
+                is_valid = self.validate_order_number(value)['valid']
+            elif column_name == 'net_amount':
+                is_valid = self.validate_amount(value)['valid']
+            elif column_name == 'statement_date':
+                is_valid = self.validate_date_field(value)['valid']
+            else:
+                is_valid = True  # Pas de validation spécifique
+            
+            if is_valid:
+                valid_count += 1
+        
+        validation['valid_values'] = valid_count
+        validation['invalid_values'] = len(series.dropna()) - valid_count
+        
+        if len(series.dropna()) > 0:
+            validation['validation_rate'] = (valid_count / len(series.dropna())) * 100
+        
+        return validation
+    
+    def validate_order_number(self, order_number: Any) -> Dict[str, Any]:
+        """Valide un numéro de commande"""
+        validation = {'valid': True, 'errors': []}
+        
+        if pd.isna(order_number):
+            validation['valid'] = False
+            validation['errors'].append("Numéro de commande manquant")
+            return validation
+        
+        order_str = str(order_number).strip()
+        
+        # Doit être numérique et entre 8-12 chiffres
+        if not re.match(self.validation_rules['order_number'], order_str):
+            validation['valid'] = False
+            validation['errors'].append(f"Format numéro de commande invalide: {order_str}")
+        
+        return validation
+    
+    def validate_amount(self, amount: Any) -> Dict[str, Any]:
+        """Valide un montant"""
+        validation = {'valid': True, 'errors': []}
+        
+        if pd.isna(amount):
+            validation['valid'] = False
+            validation['errors'].append("Montant manquant")
+            return validation
+        
+        try:
+            amount_float = float(amount)
+            
+            # Vérification des seuils
+            if amount_float < self.thresholds['min_amount']:
+                validation['errors'].append(f"Montant trop faible: {amount_float}")
+            elif amount_float > self.thresholds['max_amount']:
+                validation['errors'].append(f"Montant trop élevé: {amount_float}")
+            elif amount_float == 0:
+                validation['errors'].append("Montant nul")
+                
+        except (ValueError, TypeError):
+            validation['valid'] = False
+            validation['errors'].append(f"Montant non numérique: {amount}")
+        
+        return validation
+    
+    def validate_date_field(self, date_value: Any) -> Dict[str, Any]:
+        """Valide une date"""
+        validation = {'valid': True, 'errors': []}
+        
+        if pd.isna(date_value):
+            return validation  # Date optionnelle
+        
+        date_str = str(date_value).strip()
+        
+        # Tentative de parsing avec différents formats
+        for date_format in self.validation_rules['date']:
+            try:
+                parsed_date = datetime.strptime(date_str, date_format)
+                
+                # Vérification de plausibilité
+                now = datetime.now()
+                if parsed_date > now:
+                    validation['errors'].append(f"Date dans le futur: {date_str}")
+                elif parsed_date.year < 2020:
+                    validation['errors'].append(f"Date trop ancienne: {date_str}")
+                
+                return validation  # Date valide trouvée
+                
+            except ValueError:
+                continue
+        
+        # Aucun format reconnu
+        validation['valid'] = False
+        validation['errors'].append(f"Format de date non reconnu: {date_str}")
+        
+        return validation
+    
+    def dataframe_to_records(self, df: pd.DataFrame, filename: str, 
+                           validation_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Convertit un DataFrame en liste de dictionnaires
+        
+        Args:
+            df: DataFrame à convertir
+            filename: Nom du fichier source
+            validation_results: Résultats de validation
+            
+        Returns:
+            Liste des enregistrements
+        """
+        records = []
+        
+        for index, row in df.iterrows():
+            record = {}
+            
+            # Données de base
+            for col in df.columns:
+                value = row[col]
+                if pd.isna(value):
+                    record[col] = None
+                else:
+                    record[col] = value
+            
+            # Métadonnées de la ligne
+            record['source_filename'] = filename
+            record['row_index'] = index
+            record['processing_timestamp'] = datetime.now().isoformat()
+            
+            # Validation de la ligne
+            row_validation = self.validate_row(row, index)
+            record['is_valid'] = row_validation['is_valid']
+            record['validation_errors'] = row_validation['errors']
+            record['validation_warnings'] = row_validation['warnings']
+            
+            records.append(record)
+        
+        return records
+    
+    def aggregate_by_order_number(self, excel_data: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """
+        Agrège les données Excel par numéro de commande
+        
+        Args:
+            excel_data: Liste des lignes Excel traitées
+            
+        Returns:
+            Dictionnaire aggregé par numéro de commande
+        """
+        aggregated = {}
+        
+        for record in excel_data:
+            if not record.get('is_valid', False):
+                continue
+            
+            order_number = record.get('order_number')
+            if not order_number:
+                continue
+            
+            order_key = str(order_number).strip()
+            
+            if order_key not in aggregated:
+                aggregated[order_key] = {
+                    'order_number': order_key,
+                    'total_amount': 0,
+                    'line_count': 0,
+                    'collaborators': [],
+                    'statement_dates': [],
+                    'suppliers': [],
+                    'source_files': [],
+                    'raw_lines': [],
+                    'validation_summary': {
+                        'total_lines': 0,
+                        'valid_lines': 0,
+                        'invalid_lines': 0,
+                        'validity_rate': 0
+                    }
+                }
+            
+            order_data = aggregated[order_key]
+            
+            # Agrégation des montants
+            net_amount = record.get('net_amount', 0)
+            if isinstance(net_amount, (int, float)) and not pd.isna(net_amount):
+                order_data['total_amount'] += net_amount
+            
+            # Comptage des lignes
+            order_data['line_count'] += 1
+            
+            # Collecte des collaborateurs
+            collaborator = record.get('collaborator')
+            if collaborator and collaborator not in order_data['collaborators']:
+                order_data['collaborators'].append(str(collaborator).strip())
+            
+            # Collecte des dates
+            statement_date = record.get('statement_date')
+            if statement_date and statement_date not in order_data['statement_dates']:
+                order_data['statement_dates'].append(statement_date)
+            
+            # Collecte des fournisseurs
+            supplier = record.get('supplier')
+            if supplier and supplier not in order_data['suppliers']:
+                order_data['suppliers'].append(str(supplier).strip())
+            
+            # Fichiers sources
+            source_file = record.get('source_filename')
+            if source_file and source_file not in order_data['source_files']:
+                order_data['source_files'].append(source_file)
+            
+            # Lignes brutes pour debug
+            order_data['raw_lines'].append(record)
+            
+            # Statistiques de validation
+            order_data['validation_summary']['total_lines'] += 1
+            if record.get('is_valid', False):
+                order_data['validation_summary']['valid_lines'] += 1
+            else:
+                order_data['validation_summary']['invalid_lines'] += 1
+        
+        # Calcul des taux de validité
+        for order_data in aggregated.values():
+            total = order_data['validation_summary']['total_lines']
+            valid = order_data['validation_summary']['valid_lines']
+            
+            if total > 0:
+                order_data['validation_summary']['validity_rate'] = (valid / total) * 100
+        
+        self.logger.info(f"Agrégation terminée: {len(aggregated)} commandes uniques")
+        return aggregated
+    
+    def get_processing_summary(self, processed_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Génère un résumé du traitement Excel
+        
+        Args:
+            processed_data: Données traitées
+            
+        Returns:
+            Résumé statistique
+        """
+        total_records = len(processed_data)
+        valid_records = sum(1 for r in processed_data if r.get('is_valid', False))
+        
+        # Analyse des erreurs communes
+        error_types = {}
+        for record in processed_data:
+            for error in record.get('validation_errors', []):
+                error_type = error.split(':')[1].strip() if ':' in error else error
+                error_types[error_type] = error_types.get(error_type, 0) + 1
+        
+        # Analyse des colonnes trouvées
+        columns_found = set()
+        for record in processed_data:
+            columns_found.update([k for k in record.keys() if not k.startswith(('source_', 'row_', 'processing_', 'is_', 'validation_'))])
+        
+        return {
+            'total_records': total_records,
+            'valid_records': valid_records,
+            'invalid_records': total_records - valid_records,
+            'validity_rate': (valid_records / total_records) * 100 if total_records > 0 else 0,
+            'columns_found': list(columns_found),
+            'common_errors': error_types,
+            'processing_timestamp': datetime.now().isoformat()
+        }
+
+# Fonctions utilitaires pour les tests
+def test_excel_processor():
+    """Fonction de test pour le module Excel"""
+    processor = ExcelProcessor()
+    
+    # Test de mapping de colonnes
+    test_columns = ['N° commande', 'Montant net à payer au fournisseur', 'Collaborateur']
+    mapping = processor.map_columns(test_columns)
+    
+    print("Test mapping colonnes:")
+    for original, mapped in mapping.items():
+        print(f"  '{original}' -> '{mapped}'")
+    
+    # Test de validation d'un numéro de commande
+    test_order = "5600013960"
+    validation = processor.validate_order_number(test_order)
+    print(f"\nTest validation commande '{test_order}': {validation}")
+    
+    # Test de nettoyage d'un montant
+    test_amount = "1.234,56"
+    cleaned_series = processor.clean_amount_column(pd.Series([test_amount]))
+    print(f"Test nettoyage montant '{test_amount}' -> {cleaned_series.iloc[0]}")
+    
+    return mapping
+
+if __name__ == "__main__":
+    # Test du module si exécuté directement
+    test_excel_processor()
