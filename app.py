@@ -143,7 +143,7 @@ def main():
         if st.session_state.processing_complete:
             st.success("✅ Traitement terminé")
         elif pdf_count > 0 and excel_count > 0:
-            st.info("🔄 Prêt pour traitement")
+            st.info("📄 Prêt pour traitement")
         else:
             st.warning("⏳ En attente de fichiers")
     
@@ -173,7 +173,7 @@ def show_home_page():
             ("⚖️ Rapprochement Intelligent", "Matching automatique par numéro de commande et montants"),
             ("📈 Rapports Visuels", "Tableaux de bord interactifs avec graphiques"),
             ("📥 Export Multiple", "Téléchargement en Excel, CSV et PDF"),
-            ("📧 Notification Email", "Envoi optionnel des résultats par email")
+            ("🔧 Traitement Avancé", "Algorithmes multi-niveaux de correspondance")
         ]
         
         for title, desc in features:
@@ -193,7 +193,7 @@ def show_home_page():
         ### Formats supportés :
         - 📄 **PDF** : Factures Randstad
         - 📊 **Excel** : .xlsx, .xls, .csv
-        - 📈 **Google Sheets** : Liens partagés
+        - 📈 **CSV** : Tous délimiteurs
         
         ### Limites :
         - 🗂️ **100 fichiers** maximum par session
@@ -202,7 +202,7 @@ def show_home_page():
         """)
         
         if st.button("🚀 Commencer", type="primary", use_container_width=True):
-            st.switch_page("pages/upload.py") if hasattr(st, 'switch_page') else st.info("Utilisez la navigation à gauche")
+            st.info("👈 Utilisez la navigation à gauche pour commencer par **Upload Fichiers**")
 
 def show_upload_page(pdf_extractor, excel_processor):
     """Page d'upload des fichiers"""
@@ -399,13 +399,8 @@ def show_reconciliation_page(reconciliation_engine):
         )
     
     with col3:
-        send_email = st.checkbox(
-            "Envoi email résultats",
-            help="Recevez les résultats par email"
-        )
-        
-        if send_email:
-            email_address = st.text_input("📧 Email", placeholder="votre@email.com")
+        # Fonctionnalité email désactivée temporairement
+        st.info("📧 Notification email\n(Temporairement désactivée)")
     
     # Lancement du rapprochement
     if st.button("🚀 Lancer le Rapprochement", type="primary", use_container_width=True):
@@ -416,7 +411,7 @@ def show_reconciliation_page(reconciliation_engine):
             config = {
                 'tolerance': tolerance / 100,  # Conversion en décimal
                 'method': matching_method.lower(),
-                'email': email_address if send_email else None
+                'email': None  # Email désactivé
             }
             
             # Lancement du rapprochement
@@ -566,7 +561,8 @@ def show_dashboard_tab(results):
     with col4:
         st.metric("💰 Montant Total", f"{summary.get('total_amount', 0):,.2f} €")
     with col5:
-        st.metric("⏱️ Temps Traitement", f"{summary.get('processing_time', 0):.1f}s")
+        processing_time = results.get('metadata', {}).get('processing_time', 0)
+        st.metric("⏱️ Temps Traitement", f"{processing_time:.1f}s")
     
     # Graphiques
     col1, col2 = st.columns(2)
@@ -822,7 +818,7 @@ def show_unmatched_tab(results):
             "🔍 Vérifiez la cohérence des numéros de commande entre PDF et Excel",
             "📅 Contrôlez les périodes de facturation",
             "📝 Vérifiez l'orthographe des noms de fichiers",
-            "🔄 Essayez différents paramètres de tolérance",
+            "📄 Essayez différents paramètres de tolérance",
             "📞 Contactez le support si le problème persiste"
         ]
         
@@ -872,18 +868,10 @@ def show_downloads_tab(results):
             )
     
     with col2:
-        st.markdown("#### 📧 Partage et Notification")
+        st.markdown("#### 🔧 Partage et Sauvegarde")
         
-        # Envoi par email
-        email_recipient = st.text_input("📧 Email destinataire", placeholder="destinataire@example.com")
-        
-        if st.button("📤 Envoyer par Email", disabled=not email_recipient):
-            if email_recipient:
-                try:
-                    send_results_email(email_recipient, results)
-                    st.success("✅ Email envoyé avec succès !")
-                except Exception as e:
-                    st.error(f"❌ Erreur envoi email: {str(e)}")
+        # Fonctionnalité email désactivée
+        st.info("📧 **Envoi par email**\n\nFonctionnalité temporairement désactivée pour la stabilité du déploiement.")
         
         # Lien de partage (simulation)
         if st.button("🔗 Générer Lien de Partage"):
@@ -906,7 +894,7 @@ def show_history_page():
         st.session_state.processing_history = []
     
     if not st.session_state.processing_history:
-        st.info("📭 Aucun traitement dans l'historique.")
+        st.info("🔭 Aucun traitement dans l'historique.")
         
         # Bouton pour ajouter un exemple
         if st.button("🎲 Ajouter un Exemple"):
@@ -998,10 +986,10 @@ def create_csv_matches(matches):
     return matches_df.to_csv(index=False)
 
 def send_results_email(email, results):
-    """Envoie les résultats par email (simulation)"""
-    # En production, utiliser un service d'email comme SendGrid
-    time.sleep(1)  # Simulation d'envoi
-    return True
+    """Envoie les résultats par email (désactivé)"""
+    # Fonctionnalité email désactivée temporairement
+    st.info("📧 Fonctionnalité email temporairement désactivée")
+    return False
 
 def save_to_history(results):
     """Sauvegarde les résultats dans l'historique"""
