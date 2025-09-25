@@ -378,8 +378,8 @@ class PDFExtractor:
             return False
         
         cell_str = str(cell).strip()
-        # Pattern pour détecter les montants
-        amount_pattern = r'^[0-9,.\s]+
+        # Pattern pour détecter les montants - CORRIGÉ
+        amount_pattern = r'^[0-9,.\s]+$'
         return bool(re.match(amount_pattern, cell_str)) and (',' in cell_str or '.' in cell_str)
     
     def is_quantity_cell(self, cell) -> bool:
@@ -388,8 +388,8 @@ class PDFExtractor:
             return False
         
         cell_str = str(cell).strip()
-        # Pattern pour quantités simples
-        quantity_pattern = r'^[0-9]+(\.[0-9]{1,2})?
+        # Pattern pour quantités simples - CORRIGÉ
+        quantity_pattern = r'^[0-9]+(\.[0-9]{1,2})?$'
         return bool(re.match(quantity_pattern, cell_str))
     
     def calculate_data_completeness(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -522,8 +522,8 @@ class PDFExtractor:
         
         po_str = str(po).strip()
         
-        # Doit contenir exactement 10 chiffres
-        if not re.match(r'^[0-9]{10}, po_str):
+        # Doit contenir exactement 10 chiffres - CORRIGÉ
+        if not re.match(r'^[0-9]{10}$', po_str):
             validation['valid'] = False
             validation['errors'].append(f"Format numéro de commande incorrect: {po_str} (attendu: 10 chiffres)")
         
@@ -540,8 +540,8 @@ class PDFExtractor:
         
         id_str = str(invoice_id).strip()
         
-        # Doit contenir au moins 4 caractères alphanumériques
-        if len(id_str) < 4 or not re.match(r'^[A-Z0-9]+, id_str):
+        # Doit contenir au moins 4 caractères alphanumériques - CORRIGÉ
+        if len(id_str) < 4 or not re.match(r'^[A-Z0-9]+$', id_str):
             validation['valid'] = False
             validation['errors'].append(f"Format ID facture suspect: {id_str}")
         
