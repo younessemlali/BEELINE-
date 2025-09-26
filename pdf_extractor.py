@@ -1,7 +1,7 @@
 """
 PDF_EXTRACTOR.PY
-Module d'extraction des données PDF pour l'application Beeline
-Extraction native des factures PDF Randstad
+Module d'extraction des données PDF optimisé pour les factures Select T.T et Randstad
+Version corrigée et adaptée aux données réelles Beeline
 """
 
 import pdfplumber
@@ -13,55 +13,57 @@ import streamlit as st
 
 class PDFExtractor:
     """
-    Extracteur de données PDF spécialisé pour les factures Randstad/Beeline
+    Extracteur de données PDF spécialisé pour les factures Select T.T et Randstad
     """
     
     def __init__(self):
         self.setup_logging()
         
-        # Patterns d'extraction spécifiques aux factures Randstad
+        # Patterns d'extraction optimisés pour vos factures réelles
         self.patterns = {
             'invoice_id': [
-                r'Invoice\s+ID[\/\s]*Number[:\s]*([A-Z0-9]+)',
-                r'Invoice\s+ID[:\s]*([A-Z0-9]+)',
-                r'Facture\s*n°[:\s]*([A-Z0-9]+)',
-                r'N°\s*facture[:\s]*([A-Z0-9]+)'
+                r'Invoice\s+ID/Number[^A-Z0-9]*([A-Z0-9]+)',
+                r'Numéro[^A-Z0-9]*([A-Z0-9]+)',
+                r'(\d{4}S\d{4})',  # Pattern spécifique 4949S0001, 4950S0001
+                r'Invoice\s+ID[^A-Z0-9]*([A-Z0-9]+)'
             ],
             'purchase_order': [
-                r'Purchase\s+Order[:\s]*([0-9]{10})',
-                r'Bon\s+de\s+commande[:\s]*([0-9]{10})',
-                r'N°\s*commande[:\s]*([0-9]{10})',
-                r'Order[:\s]*([0-9]{10})'
+                r'Purchase\s+Order[^0-9]*([0-9]{10})',
+                r'Bon\s+de\s+commande[^0-9]*([0-9]{10})',
+                r'commande[^0-9]*([0-9]{10})',
+                # Pattern spécifique pour votre layout
+                r'Purchase\s+Order\s*/\s*Bon\s+de[^0-9]*([0-9]{10})',
+                r'([0-9]{10})\s+[\d/]+'  # Numéro suivi de date
             ],
             'invoice_date': [
-                r'Invoice\s+Date[:\s]*([0-9]{4}[\/\-][0-9]{2}[\/\-][0-9]{2})',
-                r'Date\s+facture[:\s]*([0-9]{4}[\/\-][0-9]{2}[\/\-][0-9]{2})',
-                r'Date[:\s]*([0-9]{4}[\/\-][0-9]{2}[\/\-][0-9]{2})'
+                r'Invoice\s+Date[^0-9]*([0-9]{4}/[0-9]{2}/[0-9]{2})',
+                r'Date[^0-9]*([0-9]{4}/[0-9]{2}/[0-9]{2})',
+                r'([0-9]{4}/[0-9]{2}/[0-9]{2})',
+                r'(\d{4}/\d{2}/\d{2})'
             ],
             'supplier': [
                 r'Facture\s+émise\s+par\s*[:]\s*([^\n\r]+)',
-                r'Supplier[:\s]*([^\n\r]+)',
-                r'Fournisseur[:\s]*([^\n\r]+)'
-            ],
-            'client': [
-                r'Mars\s+Wrigley[^\n\r]*',
-                r'Au\s+nom\s+et\s+pour\s+le\s+compte\s+de[:\s]*([^\n\r]+)'
+                r'^([^0-9\n\r]{2,})',  # Première ligne non numérique
+                r'Select\s+T\.T',  # Pattern spécifique
+                r'Randstad'
             ],
             'total_net': [
-                r'Invoice\s+Total.*?EUR[:\s]*([0-9,]+\.?[0-9]*)',
-                r'Montant\s*Net[:\s]*([0-9,]+\.?[0-9]*)',
-                r'Total\s*HT[:\s]*([0-9,]+\.?[0-9]*)',
-                r'Net\s*Amount[:\s]*([0-9,]+\.?[0-9]*)'
+                # Pattern pour vos PDFs avec "Invoice Total (EUR)"
+                r'Invoice\s+Total\s*\(EUR\)[^0-9]*([0-9,]+\.?[0-9]*)',
+                r'Net\s+Amount[^0-9]*([0-9,]+\.?[0-9]*)',
+                r'Montant\s*Net[^0-9]*([0-9,]+\.?[0-9]*)',
+                # Pattern spécifique pour votre layout tabulaire
+                r'(\d+[,.]?\d*)\s+\d+[,.]?\d*\s+\d+[,.]?\d*$'
             ],
             'total_vat': [
-                r'TVA[:\s]*([0-9,]+\.?[0-9]*)',
-                r'VAT[:\s]*([0-9,]+\.?[0-9]*)',
-                r'Tax[:\s]*([0-9,]+\.?[0-9]*)'
+                r'VAT\s+Amount[^0-9]*([0-9,]+\.?[0-9]*)',
+                r'Montant\s+TVA[^0-9]*([0-9,]+\.?[0-9]*)',
+                r'TVA[^0-9]*([0-9,]+\.?[0-9]*)'
             ],
             'total_gross': [
-                r'Total\s*TTC[:\s]*([0-9,]+\.?[0-9]*)',
-                r'Gross\s*Total[:\s]*([0-9,]+\.?[0-9]*)',
-                r'Invoice\s+Total.*?EUR.*?[0-9,]+\.?[0-9]*\s+[0-9,]+\.?[0-9]*\s+([0-9,]+\.?[0-9]*)'
+                r'Gross\s+Amount[^0-9]*([0-9,]+\.?[0-9]*)',
+                r'Montant\s+brut[^0-9]*([0-9,]+\.?[0-9]*)',
+                r'Total.*?([0-9,]+\.[0-9]{2})$'
             ]
         }
         
@@ -80,12 +82,6 @@ class PDFExtractor:
     def extract_single_pdf(self, pdf_file) -> Dict[str, Any]:
         """
         Extrait les données d'un seul fichier PDF
-        
-        Args:
-            pdf_file: Fichier PDF uploadé (Streamlit UploadedFile)
-            
-        Returns:
-            Dict contenant les données extraites
         """
         try:
             self.logger.info(f"Début extraction PDF: {pdf_file.name}")
@@ -121,12 +117,92 @@ class PDFExtractor:
                     'file_size': pdf_file.size,
                     'pages_count': len(pdf.pages),
                     'extraction_timestamp': datetime.now().isoformat(),
-                    'extractor_version': '2.0.0',
+                    'extractor_version': '2.1.0',
                     'text_length': len(full_text),
                     'tables_count': len(tables_data)
                 }
                 
-                self.logger.info(f"Extraction réussie: {pdf_file.name}")
+                self.logger.info(f"Traitement PDF {i+1}/{len(pdf_files)}: {pdf_file.name}")
+                
+                result = self.extract_single_pdf(pdf_file)
+                result['batch_index'] = i
+                results.append(result)
+                
+            except Exception as e:
+                self.logger.error(f"Erreur traitement PDF {pdf_file.name}: {str(e)}")
+                results.append({
+                    'success': False,
+                    'error': str(e),
+                    'filename': pdf_file.name,
+                    'batch_index': i
+                })
+        
+        return results
+    
+    def get_extraction_summary(self, extraction_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Génère un résumé des extractions
+        """
+        total_files = len(extraction_results)
+        successful_extractions = sum(1 for r in extraction_results if r.get('success', False))
+        processable_files = sum(1 for r in extraction_results 
+                               if r.get('data_completeness', {}).get('processable', False))
+        
+        # Analyse des erreurs communes
+        error_types = {}
+        for result in extraction_results:
+            if not result.get('success', True):
+                error = result.get('error', 'Erreur inconnue')
+                error_types[error] = error_types.get(error, 0) + 1
+        
+        # Analyse de la complétude moyenne
+        completeness_scores = [
+            r.get('data_completeness', {}).get('overall_score', 0)
+            for r in extraction_results
+            if r.get('success', False)
+        ]
+        
+        avg_completeness = sum(completeness_scores) / len(completeness_scores) if completeness_scores else 0
+        
+        return {
+            'total_files': total_files,
+            'successful_extractions': successful_extractions,
+            'failed_extractions': total_files - successful_extractions,
+            'processable_files': processable_files,
+            'success_rate': (successful_extractions / total_files) * 100 if total_files > 0 else 0,
+            'processable_rate': (processable_files / total_files) * 100 if total_files > 0 else 0,
+            'average_completeness': avg_completeness,
+            'common_errors': error_types,
+            'extraction_timestamp': datetime.now().isoformat()
+        }
+
+# Fonctions utilitaires pour les tests
+def test_pdf_extractor():
+    """Fonction de test pour le module PDF"""
+    extractor = PDFExtractor()
+    
+    # Test des patterns avec vos données réelles
+    test_text = """
+    Invoice ID/Number: 4949S0001
+    Purchase Order / Bon de commande: 5600025054
+    Invoice Date: 2025/03/10
+    4949_65744_Temporary employees - Expense
+    4950_65744_Temporary employees - Timesheet
+    Invoice Total (EUR): 9.84
+    Supplier: Select T.T
+    """
+    
+    result = extractor.parse_pdf_content(test_text, "test.pdf")
+    print("Test extraction optimisée:")
+    for key, value in result.items():
+        if not key.startswith('raw_text'):
+            print(f"  {key}: {value}")
+    
+    return result
+
+if __name__ == "__main__":
+    # Test du module si exécuté directement
+    test_pdf_extractor()logger.info(f"Extraction réussie: {pdf_file.name}")
                 return extracted_data
                 
         except Exception as e:
@@ -141,25 +217,32 @@ class PDFExtractor:
     def parse_pdf_content(self, text: str, filename: str, tables: List = None) -> Dict[str, Any]:
         """
         Parse le contenu texte du PDF pour extraire les données structurées
-        
-        Args:
-            text: Texte complet du PDF
-            filename: Nom du fichier
-            tables: Tableaux extraits (optionnel)
-            
-        Returns:
-            Dict avec les données parsées
         """
         extracted_data = {
             'success': True,
             'filename': filename,
-            'raw_text_sample': text[:500] if text else "",  # Échantillon pour debug
+            'raw_text_sample': text[:500] if text else "",
         }
         
         # Extraction des champs principaux
         for field_name, patterns in self.patterns.items():
             extracted_value = self.extract_field_with_patterns(text, patterns, field_name)
             extracted_data[field_name] = extracted_value
+        
+        # Extraction des références détaillées pour Select T.T
+        invoice_references = self.extract_invoice_references(text)
+        extracted_data['invoice_references'] = invoice_references
+        
+        # Compilation des références pour le rapprochement
+        if invoice_references:
+            # Premier batch_id trouvé comme référence principale
+            main_ref = invoice_references[0]
+            extracted_data['main_reference'] = main_ref['reference_key']
+            extracted_data['batch_id'] = main_ref['batch_id']
+            extracted_data['assignment_id'] = main_ref['assignment_id']
+            
+            # Liste de toutes les références pour matching avancé
+            extracted_data['all_references'] = [ref['reference_key'] for ref in invoice_references]
         
         # Post-traitement des montants
         extracted_data = self.post_process_amounts(extracted_data)
@@ -174,17 +257,62 @@ class PDFExtractor:
         
         return extracted_data
     
+    def extract_invoice_references(self, text: str) -> List[Dict[str, Any]]:
+        """
+        Extrait les références ligne par ligne des factures Select T.T
+        """
+        references = []
+        
+        # Pattern pour capturer les lignes de service
+        # Ex: "4949_65744_Temporary employees - Expense"
+        service_patterns = [
+            r'(\d{4}_\d{5}_[^0-9\n\r]+?)[\s]+([\d/]+)[\s]+(Each|Hours)[\s]+([\d,.]+)',
+            r'(\d{4}_\d{5}_[^\n\r]+)',  # Pattern plus simple
+            r'(\d{4})_(\d{5})_([^0-9\n\r]+)',  # Pattern décomposé
+        ]
+        
+        for pattern in service_patterns:
+            matches = re.findall(pattern, text, re.MULTILINE | re.IGNORECASE)
+            
+            for match in matches:
+                if isinstance(match, tuple):
+                    if len(match) >= 3 and '_' not in match[1]:  # Pattern décomposé
+                        batch_id, assignment_id, service_desc = match[0], match[1], match[2]
+                        full_ref = f"{batch_id}_{assignment_id}_{service_desc.strip()}"
+                    elif len(match) >= 1:  # Pattern complet
+                        full_ref = match[0].strip()
+                        # Décomposition de la référence
+                        ref_parts = full_ref.split('_', 2)
+                        if len(ref_parts) >= 3:
+                            batch_id = ref_parts[0]
+                            assignment_id = ref_parts[1]
+                            service_desc = ref_parts[2].strip()
+                        else:
+                            continue
+                    else:
+                        continue
+                    
+                    references.append({
+                        'full_reference': full_ref,
+                        'batch_id': batch_id,
+                        'assignment_id': assignment_id,
+                        'service_description': service_desc,
+                        'reference_key': f"{batch_id}_{assignment_id}"
+                    })
+        
+        # Supprimer les doublons
+        seen = set()
+        unique_references = []
+        for ref in references:
+            if ref['reference_key'] not in seen:
+                seen.add(ref['reference_key'])
+                unique_references.append(ref)
+        
+        return unique_references
+    
     def extract_field_with_patterns(self, text: str, patterns: List[str], field_name: str) -> Optional[str]:
         """
         Extrait un champ en utilisant plusieurs patterns de regex
-        
-        Args:
-            text: Texte à analyser
-            patterns: Liste des patterns regex à tester
-            field_name: Nom du champ pour les logs
-            
-        Returns:
-            Valeur extraite ou None
         """
         if not text:
             return None
@@ -206,19 +334,12 @@ class PDFExtractor:
                 self.logger.warning(f"Erreur regex pour {field_name}: {e}")
                 continue
         
-        self.logger.warning(f"Champ {field_name} non trouvé dans {text[:100]}...")
+        self.logger.warning(f"Champ {field_name} non trouvé")
         return None
     
     def clean_extracted_value(self, value: str, field_type: str) -> str:
         """
         Nettoie une valeur extraite selon son type
-        
-        Args:
-            value: Valeur à nettoyer
-            field_type: Type du champ
-            
-        Returns:
-            Valeur nettoyée
         """
         if not value:
             return ""
@@ -256,12 +377,6 @@ class PDFExtractor:
     def post_process_amounts(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Post-traite les montants extraits pour les convertir en float
-        
-        Args:
-            data: Données extraites
-            
-        Returns:
-            Données avec montants convertis
         """
         amount_fields = ['total_net', 'total_vat', 'total_gross']
         
@@ -285,12 +400,6 @@ class PDFExtractor:
     def parse_amount_string(self, amount_str: str) -> float:
         """
         Convertit une chaîne de montant en float
-        
-        Args:
-            amount_str: Chaîne représentant un montant
-            
-        Returns:
-            Montant en float
         """
         if not amount_str:
             return 0.0
@@ -326,17 +435,11 @@ class PDFExtractor:
     def extract_billing_details(self, tables: List) -> List[Dict[str, Any]]:
         """
         Extrait les détails de facturation depuis les tableaux
-        
-        Args:
-            tables: Liste des tableaux extraits du PDF
-            
-        Returns:
-            Liste des lignes de facturation
         """
         billing_details = []
         
         for table in tables:
-            if not table or len(table) < 2:  # Ignorer les tableaux vides ou sans données
+            if not table or len(table) < 2:
                 continue
             
             # Détection de l'en-tête du tableau de facturation
@@ -354,20 +457,20 @@ class PDFExtractor:
                     # Extraction des données de la ligne
                     line_data = {}
                     
-                    # Mapping basique des colonnes (peut être amélioré)
+                    # Mapping basique des colonnes
                     for i, cell in enumerate(row):
                         if cell is not None and str(cell).strip():
                             if i == 0:  # Première colonne généralement description
                                 line_data['description'] = str(cell).strip()
-                            elif self.is_amount_cell(cell):  # Détection automatique des montants
+                            elif self.is_amount_cell(cell):
                                 amount_key = f'amount_{len([k for k in line_data.keys() if k.startswith("amount")])}'
                                 line_data[amount_key] = self.parse_amount_string(str(cell))
-                            elif self.is_quantity_cell(cell):  # Détection des quantités
+                            elif self.is_quantity_cell(cell):
                                 line_data['quantity'] = self.parse_amount_string(str(cell))
                             else:
                                 line_data[f'column_{i}'] = str(cell).strip()
                     
-                    if line_data:  # Si on a extrait des données
+                    if line_data:
                         billing_details.append(line_data)
         
         return billing_details
@@ -395,17 +498,11 @@ class PDFExtractor:
     def calculate_data_completeness(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Calcule le pourcentage de complétude des données extraites
-        
-        Args:
-            data: Données extraites
-            
-        Returns:
-            Statistiques de complétude
         """
         # Champs critiques pour le rapprochement
         critical_fields = ['purchase_order', 'total_net']
         important_fields = ['invoice_id', 'invoice_date', 'supplier']
-        optional_fields = ['total_vat', 'total_gross', 'client']
+        optional_fields = ['total_vat', 'total_gross', 'main_reference']
         
         completeness = {
             'critical_score': 0,
@@ -443,15 +540,15 @@ class PDFExtractor:
         
         # Score global pondéré
         completeness['overall_score'] = (
-            completeness['critical_score'] * 0.6 +  # 60% pour les critiques
-            completeness['important_score'] * 0.3 +  # 30% pour les importants
-            completeness['optional_score'] * 0.1     # 10% pour les optionnels
+            completeness['critical_score'] * 0.6 +
+            completeness['important_score'] * 0.3 +
+            completeness['optional_score'] * 0.1
         )
         
         # Détermination si les données sont processables
         completeness['processable'] = (
-            completeness['critical_score'] >= 100 and  # Tous les champs critiques
-            completeness['important_score'] >= 50      # Au moins 50% des importants
+            completeness['critical_score'] >= 100 and
+            completeness['important_score'] >= 50
         )
         
         return completeness
@@ -459,12 +556,6 @@ class PDFExtractor:
     def validate_extracted_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Valide les données extraites selon les règles métier
-        
-        Args:
-            data: Données extraites à valider
-            
-        Returns:
-            Résultats de validation
         """
         validation_results = {
             'is_valid': True,
@@ -609,7 +700,7 @@ class PDFExtractor:
         return validation
     
     def validate_supplier(self, supplier: str) -> Dict[str, Any]:
-        """Valide le nom du fournisseur"""
+        """Valide le nom du fournisseur - adapté aux fournisseurs réels"""
         validation = {'valid': True, 'errors': []}
         
         if not supplier:
@@ -619,8 +710,11 @@ class PDFExtractor:
         
         supplier_str = str(supplier).strip().lower()
         
-        # Pour Beeline, on s'attend principalement à Randstad
-        expected_suppliers = ['randstad', 'select t.t.']
+        # Fournisseurs acceptés basés sur vos données réelles
+        expected_suppliers = [
+            'randstad', 'select t.t.', 'select t.t', 'select tt',
+            'randstad france', 'select t.t. (randstad france)'
+        ]
         
         if not any(expected in supplier_str for expected in expected_suppliers):
             validation['errors'].append(f"Fournisseur non reconnu: {supplier}")
@@ -630,104 +724,9 @@ class PDFExtractor:
     def extract_multiple_pdfs(self, pdf_files: List) -> List[Dict[str, Any]]:
         """
         Extrait les données de plusieurs fichiers PDF
-        
-        Args:
-            pdf_files: Liste des fichiers PDF
-            
-        Returns:
-            Liste des résultats d'extraction
         """
         results = []
         
         for i, pdf_file in enumerate(pdf_files):
             try:
-                self.logger.info(f"Traitement PDF {i+1}/{len(pdf_files)}: {pdf_file.name}")
-                
-                # Mise à jour de la progress bar si dans Streamlit
-                if hasattr(st, 'progress'):
-                    progress = (i + 1) / len(pdf_files)
-                    # Note: La progress bar sera gérée depuis l'app principale
-                
-                result = self.extract_single_pdf(pdf_file)
-                result['batch_index'] = i
-                results.append(result)
-                
-            except Exception as e:
-                self.logger.error(f"Erreur traitement PDF {pdf_file.name}: {str(e)}")
-                results.append({
-                    'success': False,
-                    'error': str(e),
-                    'filename': pdf_file.name,
-                    'batch_index': i
-                })
-        
-        return results
-    
-    def get_extraction_summary(self, extraction_results: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Génère un résumé des extractions
-        
-        Args:
-            extraction_results: Résultats des extractions
-            
-        Returns:
-            Résumé statistique
-        """
-        total_files = len(extraction_results)
-        successful_extractions = sum(1 for r in extraction_results if r.get('success', False))
-        processable_files = sum(1 for r in extraction_results 
-                               if r.get('data_completeness', {}).get('processable', False))
-        
-        # Analyse des erreurs communes
-        error_types = {}
-        for result in extraction_results:
-            if not result.get('success', True):
-                error = result.get('error', 'Erreur inconnue')
-                error_types[error] = error_types.get(error, 0) + 1
-        
-        # Analyse de la complétude moyenne
-        completeness_scores = [
-            r.get('data_completeness', {}).get('overall_score', 0)
-            for r in extraction_results
-            if r.get('success', False)
-        ]
-        
-        avg_completeness = sum(completeness_scores) / len(completeness_scores) if completeness_scores else 0
-        
-        return {
-            'total_files': total_files,
-            'successful_extractions': successful_extractions,
-            'failed_extractions': total_files - successful_extractions,
-            'processable_files': processable_files,
-            'success_rate': (successful_extractions / total_files) * 100 if total_files > 0 else 0,
-            'processable_rate': (processable_files / total_files) * 100 if total_files > 0 else 0,
-            'average_completeness': avg_completeness,
-            'common_errors': error_types,
-            'extraction_timestamp': datetime.now().isoformat()
-        }
-
-# Fonctions utilitaires pour les tests
-def test_pdf_extractor():
-    """Fonction de test pour le module PDF"""
-    extractor = PDFExtractor()
-    
-    # Test des patterns
-    test_text = """
-    Invoice ID: 5118S0004
-    Purchase Order: 5600013960
-    Invoice Date: 2025/09/22
-    Total Net Amount: 1,014.20 EUR
-    Supplier: Randstad France
-    """
-    
-    result = extractor.parse_pdf_content(test_text, "test.pdf")
-    print("Test extraction:")
-    for key, value in result.items():
-        if not key.startswith('raw_text'):
-            print(f"  {key}: {value}")
-    
-    return result
-
-if __name__ == "__main__":
-    # Test du module si exécuté directement
-    test_pdf_extractor()
+                self.
