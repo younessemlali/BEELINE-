@@ -1,7 +1,7 @@
 """
 RECONCILIATION.PY
-Moteur de rapprochement intelligent pour l'application Beeline
-Rapprochement avancé entre données PDF et Excel avec algorithmes multiples
+Moteur de rapprochement intelligent optimisé pour Beeline
+Version adaptée aux données réelles Select T.T et Excel Beeline
 """
 
 import pandas as pd
@@ -26,7 +26,8 @@ class MatchMethod(Enum):
     EXACT_ORDER = "exact_order"
     PARTIAL_ORDER = "partial_order"
     AMOUNT_FUZZY = "amount_fuzzy"
-    SUPPLIER_DATE = "supplier_date"
+    REFERENCE_CROSS = "reference_cross"
+    COST_CENTER = "cost_center"
     INTELLIGENT = "intelligent"
 
 @dataclass
@@ -42,13 +43,13 @@ class MatchResult:
 
 class ReconciliationEngine:
     """
-    Moteur de rapprochement intelligent pour Beeline
+    Moteur de rapprochement intelligent pour Beeline - Version optimisée
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.setup_logging()
         
-        # Configuration par défaut
+        # Configuration par défaut optimisée
         self.config = {
             'tolerance': 0.01,  # 1% de tolérance sur les montants
             'method': 'intelligent',  # Méthode de rapprochement
@@ -59,8 +60,8 @@ class ReconciliationEngine:
                 'close': 0.8,
                 'distant': 0.3
             },
-            'enable_machine_learning': False,  # ML pour améliorer les matches
-            'min_confidence': 0.7  # Confiance minimum pour valider un match
+            'enable_reference_matching': True,  # Activation du matching par références
+            'min_confidence': 0.6  # Confiance minimum pour valider un match (abaissé)
         }
         
         # Mise à jour avec la config fournie
@@ -89,17 +90,9 @@ class ReconciliationEngine:
                              config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Effectue le rapprochement principal entre PDFs et Excel
-        
-        Args:
-            pdf_data: Données extraites des PDFs
-            excel_data: Données traitées des Excel
-            config: Configuration optionnelle
-            
-        Returns:
-            Résultats complets du rapprochement
         """
         start_time = datetime.now()
-        self.logger.info("🚀 Démarrage du rapprochement intelligent")
+        self.logger.info("Démarrage du rapprochement intelligent optimisé")
         
         # Mise à jour de la configuration si fournie
         if config:
@@ -114,15 +107,17 @@ class ReconciliationEngine:
             self.stats['total_pdfs'] = len(prepared_pdfs)
             self.stats['total_excel_orders'] = len(aggregated_excel)
             
-            # 3. Rapprochement selon la méthode configurée
-            if self.config['method'] == 'intelligent':
-                results = self.intelligent_reconciliation(prepared_pdfs, aggregated_excel)
-            elif self.config['method'] == 'exact':
-                results = self.exact_reconciliation(prepared_pdfs, aggregated_excel)
-            elif self.config['method'] == 'partiel':
-                results = self.partial_reconciliation(prepared_pdfs, aggregated_excel)
-            else:
-                results = self.intelligent_reconciliation(prepared_pdfs, aggregated_excel)
+            self.logger.info(f"PDFs préparés: {len(prepared_pdfs)}")
+            for pdf in prepared_pdfs[:3]:  # Premiers 3 PDFs pour debug
+                self.logger.info(f"PDF: {pdf['filename']}, Order: {pdf.get('purchase_order')}, Amount: {pdf.get('total_net')}")
+            
+            self.logger.info(f"Excel agrégés: {len(aggregated_excel)}")
+            for order_key in list(aggregated_excel.keys())[:3]:  # Premiers 3
+                order = aggregated_excel[order_key]
+                self.logger.info(f"Excel: Order {order_key}, Amount: {order.get('total_amount')}")
+            
+            # 3. Rapprochement intelligent multi-niveaux
+            results = self.intelligent_reconciliation(prepared_pdfs, aggregated_excel)
             
             # 4. Post-traitement et analyse
             results = self.post_process_results(results, prepared_pdfs, aggregated_excel)
@@ -137,27 +132,21 @@ class ReconciliationEngine:
             results['metadata'] = {
                 'processing_time': processing_time,
                 'reconciliation_timestamp': datetime.now().isoformat(),
-                'engine_version': '2.0.0',
+                'engine_version': '2.1.0',
                 'config_used': self.config.copy(),
                 'performance_stats': self.stats.copy()
             }
             
-            self.logger.info(f"✅ Rapprochement terminé en {processing_time:.2f}s")
+            self.logger.info(f"Rapprochement terminé en {processing_time:.2f}s")
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Erreur durant le rapprochement: {str(e)}")
+            self.logger.error(f"Erreur durant le rapprochement: {str(e)}")
             raise Exception(f"Erreur rapprochement: {str(e)}")
     
     def prepare_pdf_data(self, pdf_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Prépare et nettoie les données PDF pour le rapprochement
-        
-        Args:
-            pdf_data: Données brutes des PDFs
-            
-        Returns:
-            Données PDF préparées
         """
         prepared = []
         
@@ -169,9 +158,9 @@ class ReconciliationEngine:
             prepared_pdf = {
                 'index': i,
                 'filename': pdf.get('filename', f'pdf_{i}'),
-                'order_number': self.clean_order_number(pdf.get('purchase_order')),
+                'purchase_order': self.clean_order_number(pdf.get('purchase_order')),
                 'invoice_id': pdf.get('invoice_id'),
-                'amount': self.parse_amount(pdf.get('total_net', 0)),
+                'total_net': self.parse_amount(pdf.get('total_net', 0)),
                 'invoice_date': self.parse_date(pdf.get('invoice_date')),
                 'supplier': self.clean_supplier_name(pdf.get('supplier', '')),
                 'client': pdf.get('client', ''),
@@ -180,27 +169,27 @@ class ReconciliationEngine:
                 'raw_data': pdf  # Garder les données originales
             }
             
+            # Ajout des références pour matching avancé
+            prepared_pdf['main_reference'] = pdf.get('main_reference', '')
+            prepared_pdf['batch_id'] = pdf.get('batch_id', '')
+            prepared_pdf['assignment_id'] = pdf.get('assignment_id', '')
+            prepared_pdf['invoice_references'] = pdf.get('invoice_references', [])
+            
             # Calcul de la qualité des données
             prepared_pdf['data_quality_score'] = self.calculate_pdf_quality_score(prepared_pdf)
             
-            # Seulement inclure les PDFs avec données suffisantes
-            if prepared_pdf['order_number'] and prepared_pdf['amount'] > 0:
+            # Inclure tous les PDFs avec des données minimales (numéro de commande OU références)
+            if (prepared_pdf['purchase_order'] or prepared_pdf['main_reference']) and prepared_pdf['total_net'] > 0:
                 prepared.append(prepared_pdf)
             else:
                 self.logger.warning(f"PDF {prepared_pdf['filename']} exclu: données insuffisantes")
         
-        self.logger.info(f"📄 {len(prepared)} PDFs préparés sur {len(pdf_data)} fournis")
+        self.logger.info(f"PDFs préparés: {len(prepared)} sur {len(pdf_data)} fournis")
         return prepared
     
     def prepare_excel_data(self, excel_data: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """
         Prépare et agrège les données Excel par numéro de commande
-        
-        Args:
-            excel_data: Données brutes des Excel
-            
-        Returns:
-            Données Excel agrégées par commande
         """
         # Import du processeur Excel pour l'agrégation
         from excel_processor import ExcelProcessor
@@ -232,22 +221,15 @@ class ReconciliationEngine:
                     order_data['billing_period_start'] = min(valid_dates)
                     order_data['billing_period_end'] = max(valid_dates)
         
-        self.logger.info(f"📊 {len(aggregated)} commandes Excel préparées")
+        self.logger.info(f"Commandes Excel préparées: {len(aggregated)}")
         return aggregated
     
     def intelligent_reconciliation(self, pdf_data: List[Dict[str, Any]], 
                                  excel_data: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Rapprochement intelligent multi-niveaux
-        
-        Args:
-            pdf_data: PDFs préparés
-            excel_data: Excel agrégés
-            
-        Returns:
-            Résultats du rapprochement
+        Rapprochement intelligent multi-niveaux optimisé
         """
-        self.logger.info("🧠 Lancement du rapprochement intelligent")
+        self.logger.info("Lancement du rapprochement intelligent multi-niveaux")
         
         results = {
             'matches': [],
@@ -257,22 +239,36 @@ class ReconciliationEngine:
             'match_details': []
         }
         
-        # Phase 1: Rapprochement exact par numéro de commande
-        self.logger.info("   Phase 1: Rapprochement exact")
+        # Phase 1: Rapprochement EXACT par numéro de commande (priorité absolue)
+        self.logger.info("   Phase 1: Rapprochement exact par N° commande")
         for pdf in pdf_data:
-            match_result = self.try_exact_match(pdf, excel_data)
+            match_result = self.try_exact_order_match(pdf, excel_data)
             
             if match_result:
+                # Enrichissement avec les références
+                match_result = self.enhance_match_with_references(match_result)
                 self.process_match_result(match_result, results)
             else:
-                # Stocker temporairement pour les phases suivantes
                 pdf['match_attempts'] = []
         
-        # Phase 2: Rapprochement partiel pour les non-matchés
-        self.logger.info("   Phase 2: Rapprochement partiel")
+        # Phase 2: Rapprochement par références croisées (pour les non-matchés)
+        self.logger.info("   Phase 2: Rapprochement par références croisées")
         unmatched_pdfs = [pdf for pdf in pdf_data if 'match_attempts' in pdf]
         
         for pdf in unmatched_pdfs:
+            match_result = self.try_reference_cross_match(pdf, excel_data, results['unmatched_excel'])
+            
+            if match_result and match_result.confidence >= self.config['min_confidence']:
+                self.process_match_result(match_result, results)
+            else:
+                if match_result:
+                    pdf['match_attempts'].append(('reference', match_result.confidence))
+        
+        # Phase 3: Rapprochement partiel par numéro de commande
+        self.logger.info("   Phase 3: Rapprochement partiel")
+        still_unmatched = [pdf for pdf in pdf_data if 'match_attempts' in pdf]
+        
+        for pdf in still_unmatched:
             match_result = self.try_partial_match(pdf, excel_data, results['unmatched_excel'])
             
             if match_result and match_result.confidence >= self.config['min_confidence']:
@@ -281,58 +277,40 @@ class ReconciliationEngine:
                 if match_result:
                     pdf['match_attempts'].append(('partial', match_result.confidence))
         
-        # Phase 3: Rapprochement par montant (fuzzy)
-        self.logger.info("   Phase 3: Rapprochement par montant")
-        still_unmatched = [pdf for pdf in pdf_data if 'match_attempts' in pdf]
-        
-        for pdf in still_unmatched:
-            match_result = self.try_amount_fuzzy_match(pdf, excel_data, results['unmatched_excel'])
-            
-            if match_result and match_result.confidence >= self.config['min_confidence']:
-                self.process_match_result(match_result, results)
-            else:
-                if match_result:
-                    pdf['match_attempts'].append(('amount_fuzzy', match_result.confidence))
-        
-        # Phase 4: Rapprochement contextuel (fournisseur + date)
-        self.logger.info("   Phase 4: Rapprochement contextuel")
+        # Phase 4: Rapprochement par montant (dernier recours)
+        self.logger.info("   Phase 4: Rapprochement par montant")
         final_unmatched = [pdf for pdf in pdf_data if 'match_attempts' in pdf]
         
         for pdf in final_unmatched:
-            match_result = self.try_contextual_match(pdf, excel_data, results['unmatched_excel'])
+            match_result = self.try_amount_fuzzy_match(pdf, excel_data, results['unmatched_excel'])
             
-            if match_result and match_result.confidence >= self.config['min_confidence']:
+            if match_result and match_result.confidence >= 0.8:  # Seuil plus élevé
                 self.process_match_result(match_result, results)
             else:
                 # Définitivement non matché
                 results['unmatched_pdf'].append(self.format_unmatched_pdf(pdf))
         
-        self.logger.info(f"   🎯 Résultats: {len(results['matches'])} matches, {len(results['discrepancies'])} écarts")
+        self.logger.info(f"   Résultats: {len(results['matches'])} matches, {len(results['discrepancies'])} écarts")
         return results
     
-    def try_exact_match(self, pdf: Dict[str, Any], 
-                       excel_data: Dict[str, Dict[str, Any]]) -> Optional[MatchResult]:
+    def try_exact_order_match(self, pdf: Dict[str, Any], 
+                             excel_data: Dict[str, Dict[str, Any]]) -> Optional[MatchResult]:
         """
-        Tente un rapprochement exact par numéro de commande
-        
-        Args:
-            pdf: Données PDF
-            excel_data: Données Excel agrégées
-            
-        Returns:
-            Résultat du match ou None
+        Rapprochement exact par numéro de commande avec validation des références
         """
-        pdf_order = pdf.get('order_number')
+        pdf_order = pdf.get('purchase_order')
         if not pdf_order:
             return None
         
-        # Recherche exacte
+        # Recherche exacte dans Excel
         if pdf_order in excel_data:
             excel_order = excel_data[pdf_order]
             
-            # Calcul des différences
-            amount_diff = abs(pdf['amount'] - excel_order['total_amount'])
-            amount_tolerance = pdf['amount'] * self.config['tolerance']
+            # Calcul des différences de montants
+            pdf_amount = pdf.get('total_net', 0)
+            excel_amount = excel_order.get('total_amount', 0)
+            amount_diff = abs(pdf_amount - excel_amount)
+            amount_tolerance = pdf_amount * self.config['tolerance']
             
             # Détermination du type de match
             if amount_diff <= amount_tolerance:
@@ -340,10 +318,11 @@ class ReconciliationEngine:
                 confidence = 1.0
             else:
                 match_type = MatchType.DISCREPANCY
-                # Confiance inversement proportionnelle à l'écart
-                confidence = max(0.1, 1.0 - (amount_diff / pdf['amount']))
+                # Confiance basée sur l'écart relatif
+                confidence = max(0.3, 1.0 - (amount_diff / pdf_amount)) if pdf_amount > 0 else 0.3
             
-            return MatchResult(
+            # Création du résultat
+            match_result = MatchResult(
                 match_type=match_type,
                 method=MatchMethod.EXACT_ORDER,
                 confidence=confidence,
@@ -351,32 +330,159 @@ class ReconciliationEngine:
                 excel_data=excel_order,
                 differences={
                     'amount_difference': amount_diff,
-                    'amount_percentage': (amount_diff / pdf['amount']) * 100 if pdf['amount'] > 0 else 0
+                    'amount_percentage': (amount_diff / pdf_amount) * 100 if pdf_amount > 0 else 0,
+                    'order_match': 'exact'
                 },
                 metadata={
                     'match_timestamp': datetime.now().isoformat(),
+                    'order_number': pdf_order,
                     'tolerance_used': self.config['tolerance']
                 }
             )
+            
+            return match_result
         
         return None
+    
+    def enhance_match_with_references(self, match_result: MatchResult) -> MatchResult:
+        """
+        Améliore un match existant avec les informations de références
+        """
+        pdf_data = match_result.pdf_data
+        excel_data = match_result.excel_data
+        
+        # Récupération des références PDF
+        pdf_references = pdf_data.get('invoice_references', [])
+        main_reference = pdf_data.get('main_reference', '')
+        
+        # Récupération des centres de coût Excel
+        excel_lines = excel_data.get('raw_lines', [])
+        excel_cost_centers = [str(line.get('cost_center', '')) for line in excel_lines if line.get('cost_center')]
+        
+        # Recherche de correspondances dans les références
+        reference_matches = []
+        for pdf_ref in pdf_references:
+            ref_key = pdf_ref.get('reference_key', '')
+            batch_id = pdf_ref.get('batch_id', '')
+            assignment_id = pdf_ref.get('assignment_id', '')
+            
+            for cost_center in excel_cost_centers:
+                if cost_center and (
+                    ref_key in cost_center or 
+                    batch_id in cost_center or 
+                    assignment_id in cost_center or
+                    cost_center in ref_key
+                ):
+                    reference_matches.append({
+                        'pdf_reference': ref_key,
+                        'excel_cost_center': cost_center,
+                        'match_type': 'partial'
+                    })
+        
+        # Enrichissement du résultat
+        match_result.differences.update({
+            'pdf_main_reference': main_reference,
+            'excel_cost_centers': excel_cost_centers,
+            'reference_matches': reference_matches,
+            'reference_validation': len(reference_matches) > 0
+        })
+        
+        # Boost de confiance si références cohérentes
+        if reference_matches and match_result.confidence < 1.0:
+            match_result.confidence = min(1.0, match_result.confidence * 1.1)
+        
+        return match_result
+    
+    def try_reference_cross_match(self, pdf: Dict[str, Any], 
+                                excel_data: Dict[str, Dict[str, Any]], 
+                                available_orders: List[str]) -> Optional[MatchResult]:
+        """
+        Rapprochement croisé par références quand le N° commande ne matche pas
+        """
+        pdf_references = pdf.get('invoice_references', [])
+        if not pdf_references:
+            return None
+        
+        best_match = None
+        best_confidence = 0
+        
+        for excel_order_key in available_orders:
+            excel_order = excel_data[excel_order_key]
+            excel_lines = excel_order.get('raw_lines', [])
+            
+            # Score de correspondance par références
+            reference_score = 0
+            matching_details = []
+            
+            for pdf_ref in pdf_references:
+                batch_id = pdf_ref.get('batch_id', '')
+                assignment_id = pdf_ref.get('assignment_id', '')
+                ref_key = pdf_ref.get('reference_key', '')
+                
+                for line in excel_lines:
+                    cost_center = str(line.get('cost_center', ''))
+                    
+                    # Différents types de correspondance
+                    if ref_key == cost_center:
+                        reference_score += 1.0  # Match exact
+                        matching_details.append(f"Exact: {ref_key}")
+                    elif batch_id in cost_center and assignment_id in cost_center:
+                        reference_score += 0.8  # Match partiel fort
+                        matching_details.append(f"Partiel: {batch_id}_{assignment_id}")
+                    elif batch_id in cost_center or assignment_id in cost_center:
+                        reference_score += 0.5  # Match partiel faible
+                        matching_details.append(f"ID: {batch_id if batch_id in cost_center else assignment_id}")
+            
+            # Normalisation du score
+            max_possible_score = len(pdf_references)
+            normalized_score = reference_score / max_possible_score if max_possible_score > 0 else 0
+            
+            if normalized_score > best_confidence and normalized_score >= 0.4:
+                best_confidence = normalized_score
+                
+                # Calcul des montants
+                pdf_amount = pdf.get('total_net', 0)
+                excel_amount = excel_order.get('total_amount', 0)
+                amount_diff = abs(pdf_amount - excel_amount)
+                
+                # Validation par montant
+                amount_factor = self.calculate_amount_confidence(pdf_amount, excel_amount)
+                combined_confidence = (normalized_score * 0.6) + (amount_factor * 0.4)
+                
+                match_type = (MatchType.PERFECT_MATCH 
+                            if amount_diff <= pdf_amount * (self.config['tolerance'] * 2)  # Tolérance élargie
+                            else MatchType.DISCREPANCY)
+                
+                best_match = MatchResult(
+                    match_type=match_type,
+                    method=MatchMethod.REFERENCE_CROSS,
+                    confidence=combined_confidence,
+                    pdf_data=pdf,
+                    excel_data=excel_order,
+                    differences={
+                        'amount_difference': amount_diff,
+                        'amount_percentage': (amount_diff / pdf_amount) * 100 if pdf_amount > 0 else 0,
+                        'reference_score': reference_score,
+                        'matching_details': matching_details,
+                        'match_method': 'reference_cross'
+                    },
+                    metadata={
+                        'match_timestamp': datetime.now().isoformat(),
+                        'cross_reference_matching': True,
+                        'reference_confidence': normalized_score
+                    }
+                )
+        
+        return best_match
     
     def try_partial_match(self, pdf: Dict[str, Any], 
                          excel_data: Dict[str, Dict[str, Any]], 
                          available_orders: List[str]) -> Optional[MatchResult]:
         """
         Tente un rapprochement partiel (début de numéro de commande)
-        
-        Args:
-            pdf: Données PDF
-            excel_data: Données Excel agrégées
-            available_orders: Commandes Excel encore disponibles
-            
-        Returns:
-            Résultat du match ou None
         """
-        pdf_order = str(pdf.get('order_number', ''))
-        if len(pdf_order) < 4:  # Trop court pour match partiel
+        pdf_order = str(pdf.get('purchase_order', ''))
+        if len(pdf_order) < 4:
             return None
         
         best_match = None
@@ -392,91 +498,21 @@ class ReconciliationEngine:
                 excel_order = excel_data[excel_order_key]
                 
                 # Facteur de confiance basé sur la similarité et la différence de montant
-                amount_factor = self.calculate_amount_confidence(pdf['amount'], excel_order['total_amount'])
+                amount_factor = self.calculate_amount_confidence(pdf.get('total_net', 0), excel_order['total_amount'])
                 combined_confidence = (similarity * 0.6) + (amount_factor * 0.4)
                 
                 if combined_confidence > best_confidence:
                     best_confidence = combined_confidence
                     
-                    amount_diff = abs(pdf['amount'] - excel_order['total_amount'])
+                    amount_diff = abs(pdf.get('total_net', 0) - excel_order['total_amount'])
                     match_type = (MatchType.PERFECT_MATCH 
-                                if amount_diff <= pdf['amount'] * self.config['tolerance']
+                                if amount_diff <= pdf.get('total_net', 0) * self.config['tolerance']
                                 else MatchType.DISCREPANCY)
                     
                     best_match = MatchResult(
                         match_type=match_type,
                         method=MatchMethod.PARTIAL_ORDER,
                         confidence=combined_confidence,
-                        pdf_data=pdf,
-                        excel_data=excel_order,
-                        differences={
-                            'amount_difference': amount_diff,
-                            'amount_percentage': (amount_diff / pdf['amount']) * 100 if pdf['amount'] > 0 else 0,
-                            'order_similarity': similarity
-                        },
-                        metadata={
-                            'match_timestamp': datetime.now().isoformat(),
-                            'similarity_threshold': self.config['fuzzy_threshold']
-                        }
-                    )
-        
-        return best_match
-    
-    def try_amount_fuzzy_match(self, pdf: Dict[str, Any], 
-                              excel_data: Dict[str, Dict[str, Any]], 
-                              available_orders: List[str]) -> Optional[MatchResult]:
-        """
-        Tente un rapprochement par montant approximatif
-        
-        Args:
-            pdf: Données PDF
-            excel_data: Données Excel agrégées  
-            available_orders: Commandes Excel encore disponibles
-            
-        Returns:
-            Résultat du match ou None
-        """
-        pdf_amount = pdf['amount']
-        if pdf_amount <= 0:
-            return None
-        
-        best_match = None
-        best_confidence = 0
-        
-        # Tolérance élargie pour le fuzzy matching
-        extended_tolerance = pdf_amount * (self.config['tolerance'] * 5)  # 5x la tolérance normale
-        
-        for excel_order_key in available_orders:
-            excel_order = excel_data[excel_order_key]
-            excel_amount = excel_order['total_amount']
-            
-            amount_diff = abs(pdf_amount - excel_amount)
-            
-            if amount_diff <= extended_tolerance:
-                # Confiance basée sur la proximité des montants
-                confidence = 1.0 - (amount_diff / extended_tolerance)
-                
-                # Bonus si dates cohérentes
-                if self.dates_are_coherent(pdf, excel_order):
-                    confidence *= 1.2  # Boost de 20%
-                
-                # Bonus si fournisseur cohérent
-                if self.suppliers_are_coherent(pdf, excel_order):
-                    confidence *= 1.1  # Boost de 10%
-                
-                confidence = min(1.0, confidence)  # Cap à 1.0
-                
-                if confidence > best_confidence:
-                    best_confidence = confidence
-                    
-                    match_type = (MatchType.PERFECT_MATCH 
-                                if amount_diff <= pdf_amount * self.config['tolerance']
-                                else MatchType.DISCREPANCY)
-                    
-                    best_match = MatchResult(
-                        match_type=match_type,
-                        method=MatchMethod.AMOUNT_FUZZY,
-                        confidence=confidence,
                         pdf_data=pdf,
                         excel_data=excel_order,
                         differences={
@@ -492,92 +528,9 @@ class ReconciliationEngine:
         
         return best_match
     
-    def try_contextual_match(self, pdf: Dict[str, Any], 
-                           excel_data: Dict[str, Dict[str, Any]], 
-                           available_orders: List[str]) -> Optional[MatchResult]:
-        """
-        Tente un rapprochement contextuel (fournisseur + période)
-        
-        Args:
-            pdf: Données PDF
-            excel_data: Données Excel agrégées
-            available_orders: Commandes Excel encore disponibles
-            
-        Returns:
-            Résultat du match ou None
-        """
-        pdf_supplier = pdf.get('supplier', '')
-        pdf_date = pdf.get('invoice_date')
-        
-        if not pdf_supplier and not pdf_date:
-            return None
-        
-        best_match = None
-        best_confidence = 0
-        
-        for excel_order_key in available_orders:
-            excel_order = excel_data[excel_order_key]
-            confidence_factors = []
-            
-            # Facteur fournisseur
-            if pdf_supplier and excel_order.get('suppliers'):
-                supplier_similarity = max([
-                    self.calculate_string_similarity(pdf_supplier, excel_supplier)
-                    for excel_supplier in excel_order['suppliers']
-                ])
-                confidence_factors.append(('supplier', supplier_similarity, 0.4))
-            
-            # Facteur date
-            if pdf_date:
-                date_similarity = self.calculate_date_similarity(pdf_date, excel_order)
-                confidence_factors.append(('date', date_similarity, 0.3))
-            
-            # Facteur montant (moins important dans cette méthode)
-            amount_similarity = self.calculate_amount_confidence(pdf['amount'], excel_order['total_amount'])
-            confidence_factors.append(('amount', amount_similarity, 0.3))
-            
-            # Calcul de la confiance pondérée
-            if confidence_factors:
-                total_weight = sum(weight for _, _, weight in confidence_factors)
-                combined_confidence = sum(
-                    score * (weight / total_weight) 
-                    for _, score, weight in confidence_factors
-                )
-                
-                if combined_confidence > best_confidence and combined_confidence >= 0.6:
-                    best_confidence = combined_confidence
-                    
-                    amount_diff = abs(pdf['amount'] - excel_order['total_amount'])
-                    match_type = (MatchType.PERFECT_MATCH 
-                                if amount_diff <= pdf['amount'] * self.config['tolerance']
-                                else MatchType.DISCREPANCY)
-                    
-                    best_match = MatchResult(
-                        match_type=match_type,
-                        method=MatchMethod.SUPPLIER_DATE,
-                        confidence=combined_confidence,
-                        pdf_data=pdf,
-                        excel_data=excel_order,
-                        differences={
-                            'amount_difference': amount_diff,
-                            'amount_percentage': (amount_diff / pdf['amount']) * 100 if pdf['amount'] > 0 else 0,
-                            'confidence_factors': dict((name, score) for name, score, _ in confidence_factors)
-                        },
-                        metadata={
-                            'match_timestamp': datetime.now().isoformat(),
-                            'contextual_matching': True
-                        }
-                    )
-        
-        return best_match
-    
     def process_match_result(self, match_result: MatchResult, results: Dict[str, Any]):
         """
         Traite et classe un résultat de match
-        
-        Args:
-            match_result: Résultat du match
-            results: Structure des résultats à mettre à jour
         """
         # Retirer de la liste des Excel non matchés
         excel_order_number = match_result.excel_data['order_number']
@@ -622,21 +575,15 @@ class ReconciliationEngine:
     
     def format_match_result(self, match_result: MatchResult) -> Dict[str, Any]:
         """
-        Formate un résultat de match pour l'affichage
-        
-        Args:
-            match_result: Résultat à formater
-            
-        Returns:
-            Résultat formaté
+        Formatage enrichi des résultats avec informations de références
         """
-        return {
+        base_result = {
             'type': match_result.match_type.value,
             'method': match_result.method.value,
             'confidence': round(match_result.confidence, 3),
             'order_number': match_result.excel_data['order_number'],
             'pdf_file': match_result.pdf_data['filename'],
-            'pdf_amount': match_result.pdf_data['amount'],
+            'pdf_amount': match_result.pdf_data.get('total_net', 0),
             'excel_amount': match_result.excel_data['total_amount'],
             'difference': match_result.differences.get('amount_difference', 0),
             'difference_percent': round(match_result.differences.get('amount_percentage', 0), 2),
@@ -645,26 +592,38 @@ class ReconciliationEngine:
             'invoice_id': match_result.pdf_data.get('invoice_id', ''),
             'invoice_date': match_result.pdf_data.get('invoice_date', ''),
             'excel_line_count': match_result.excel_data.get('line_count', 0),
-            'match_metadata': match_result.metadata
         }
+        
+        # Ajout des informations de références si disponibles
+        pdf_main_ref = match_result.differences.get('pdf_main_reference')
+        if pdf_main_ref:
+            base_result['pdf_reference'] = pdf_main_ref
+        
+        excel_cost_centers = match_result.differences.get('excel_cost_centers', [])
+        if excel_cost_centers:
+            base_result['excel_cost_centers'] = ', '.join(excel_cost_centers[:3])
+        
+        reference_matches = match_result.differences.get('reference_matches', [])
+        if reference_matches:
+            base_result['reference_validation'] = 'Validé'
+        
+        matching_details = match_result.differences.get('matching_details', [])
+        if matching_details:
+            base_result['match_details'] = ' | '.join(matching_details[:2])
+        
+        return base_result
     
     def format_unmatched_pdf(self, pdf: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Formate un PDF non matché
-        
-        Args:
-            pdf: Données PDF
-            
-        Returns:
-            PDF formaté avec raisons du non-match
+        Formate un PDF non matché avec diagnostic détaillé
         """
         # Analyse des raisons du non-match
         reasons = []
         
-        if not pdf.get('order_number'):
+        if not pdf.get('purchase_order'):
             reasons.append("Numéro de commande manquant ou invalide")
         
-        if pdf.get('amount', 0) <= 0:
+        if pdf.get('total_net', 0) <= 0:
             reasons.append("Montant invalide ou manquant")
         
         if pdf.get('data_quality_score', 0) < 0.5:
@@ -680,11 +639,12 @@ class ReconciliationEngine:
         
         return {
             'filename': pdf['filename'],
-            'order_number': pdf.get('order_number', 'Non trouvé'),
-            'amount': pdf.get('amount', 0),
+            'order_number': pdf.get('purchase_order', 'Non trouvé'),
+            'amount': pdf.get('total_net', 0),
             'invoice_id': pdf.get('invoice_id', 'Non trouvé'),
             'invoice_date': pdf.get('invoice_date', 'Non trouvé'),
             'supplier': pdf.get('supplier', 'Non trouvé'),
+            'main_reference': pdf.get('main_reference', 'Non trouvé'),
             'data_quality_score': pdf.get('data_quality_score', 0),
             'reasons': reasons,
             'reason': ' | '.join(reasons)
@@ -700,10 +660,14 @@ class ReconciliationEngine:
         # Conversion en string et nettoyage
         order_str = str(order_number).strip()
         
+        # Gestion des nombres Excel (5600002101.0 -> 5600002101)
+        if '.' in order_str:
+            order_str = order_str.split('.')[0]
+        
         # Suppression des caractères non numériques
         clean_order = re.sub(r'[^\d]', '', order_str)
         
-        # Validation de la longueur
+        # Validation de la longueur (accepter 8 à 12 chiffres maintenant)
         if 8 <= len(clean_order) <= 12:
             return clean_order
         
@@ -786,7 +750,7 @@ class ReconciliationEngine:
         
         # Confiance inversement proportionnelle à l'écart relatif
         relative_diff = difference / max_amount
-        return max(0.0, 1.0 - relative_diff * 2)  # *2 pour être plus strict
+        return max(0.0, 1.0 - relative_diff * 2)
     
     def dates_are_coherent(self, pdf: Dict[str, Any], excel_order: Dict[str, Any]) -> bool:
         """Vérifie si les dates PDF et Excel sont cohérentes"""
@@ -829,46 +793,16 @@ class ReconciliationEngine:
         
         return False
     
-    def calculate_date_similarity(self, pdf_date: datetime, excel_order: Dict[str, Any]) -> float:
-        """Calcule la similarité temporelle"""
-        if not pdf_date:
-            return 0.0
-        
-        excel_dates = []
-        if excel_order.get('billing_period_start'):
-            excel_dates.append(excel_order['billing_period_start'])
-        if excel_order.get('billing_period_end'):
-            excel_dates.append(excel_order['billing_period_end'])
-        
-        if not excel_dates:
-            return 0.0
-        
-        # Trouver la date Excel la plus proche
-        min_diff_days = float('inf')
-        for excel_date in excel_dates:
-            if isinstance(excel_date, datetime):
-                diff_days = abs((pdf_date - excel_date).days)
-                min_diff_days = min(min_diff_days, diff_days)
-        
-        if min_diff_days == float('inf'):
-            return 0.0
-        
-        # Similarité inversement proportionnelle à la différence
-        max_tolerance = self.config['date_tolerance_days']
-        if min_diff_days <= max_tolerance:
-            return 1.0 - (min_diff_days / max_tolerance)
-        else:
-            return 0.0
-    
     def calculate_pdf_quality_score(self, pdf: Dict[str, Any]) -> float:
         """Calcule un score de qualité pour un PDF"""
         score = 0.0
         weights = {
-            'order_number': 0.4,
-            'amount': 0.3,
+            'purchase_order': 0.3,
+            'total_net': 0.3,
             'invoice_id': 0.1,
             'supplier': 0.1,
-            'invoice_date': 0.1
+            'invoice_date': 0.1,
+            'main_reference': 0.1  # Nouveau
         }
         
         for field, weight in weights.items():
@@ -881,7 +815,7 @@ class ReconciliationEngine:
         
         # Bonus pour complétude élevée
         completeness = pdf.get('data_completeness', {}).get('overall_score', 0)
-        score *= (0.8 + (completeness / 100) * 0.2)  # Entre 0.8 et 1.0
+        score *= (0.8 + (completeness / 100) * 0.2)
         
         return min(1.0, score)
     
@@ -895,77 +829,15 @@ class ReconciliationEngine:
         if excel_order.get('total_amount', 0) > 0:
             score += 0.3
         if excel_order.get('collaborators'):
-            score += 0.2
-        if excel_order.get('line_count', 0) > 0:
-            score += 0.1
+            score += 0.15
+        if excel_order.get('cost_centers'):  # Nouveau
+            score += 0.15
         
         # Bonus pour cohérence des données
         validity_rate = excel_order.get('validation_summary', {}).get('validity_rate', 100)
         score *= (validity_rate / 100)
         
         return min(1.0, score)
-    
-    # Méthodes de rapprochement alternatives
-    
-    def exact_reconciliation(self, pdf_data: List[Dict[str, Any]], 
-                           excel_data: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """Rapprochement exact seulement"""
-        self.logger.info("🎯 Rapprochement exact uniquement")
-        
-        results = {
-            'matches': [],
-            'discrepancies': [],
-            'unmatched_pdf': [],
-            'unmatched_excel': list(excel_data.keys()),
-            'match_details': []
-        }
-        
-        for pdf in pdf_data:
-            match_result = self.try_exact_match(pdf, excel_data)
-            
-            if match_result:
-                self.process_match_result(match_result, results)
-            else:
-                results['unmatched_pdf'].append(self.format_unmatched_pdf(pdf))
-        
-        return results
-    
-    def partial_reconciliation(self, pdf_data: List[Dict[str, Any]], 
-                             excel_data: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """Rapprochement exact + partiel"""
-        self.logger.info("🔍 Rapprochement exact + partiel")
-        
-        results = {
-            'matches': [],
-            'discrepancies': [],
-            'unmatched_pdf': [],
-            'unmatched_excel': list(excel_data.keys()),
-            'match_details': []
-        }
-        
-        # Phase 1: Exact
-        for pdf in pdf_data:
-            match_result = self.try_exact_match(pdf, excel_data)
-            
-            if match_result:
-                self.process_match_result(match_result, results)
-            else:
-                pdf['needs_partial_match'] = True
-        
-        # Phase 2: Partiel pour les non-matchés
-        unmatched_pdfs = [pdf for pdf in pdf_data if pdf.get('needs_partial_match')]
-        
-        for pdf in unmatched_pdfs:
-            match_result = self.try_partial_match(pdf, excel_data, results['unmatched_excel'])
-            
-            if match_result and match_result.confidence >= self.config['min_confidence']:
-                self.process_match_result(match_result, results)
-            else:
-                results['unmatched_pdf'].append(self.format_unmatched_pdf(pdf))
-        
-        return results
-    
-    # Post-traitement et analyse
     
     def post_process_results(self, results: Dict[str, Any], 
                            pdf_data: List[Dict[str, Any]], 
@@ -981,6 +853,7 @@ class ReconciliationEngine:
                     'order_number': excel_order_key,
                     'total_amount': excel_order['total_amount'],
                     'collaborators': ', '.join(excel_order.get('collaborators', [])),
+                    'cost_centers': ', '.join(excel_order.get('cost_centers', [])),
                     'line_count': excel_order.get('line_count', 0),
                     'source_files': ', '.join(excel_order.get('source_files', [])),
                     'reason': 'Aucun PDF correspondant trouvé'
@@ -989,7 +862,7 @@ class ReconciliationEngine:
         results['unmatched_excel'] = unmatched_excel_formatted
         
         # Calcul des totaux
-        total_pdf_amount = sum(pdf['amount'] for pdf in pdf_data if pdf['amount'] > 0)
+        total_pdf_amount = sum(pdf['total_net'] for pdf in pdf_data if pdf['total_net'] > 0)
         total_excel_amount = sum(excel['total_amount'] for excel in excel_data.values())
         
         results['totals'] = {
@@ -1029,9 +902,10 @@ class ReconciliationEngine:
             # Statistiques de base
             'total_invoices': total_pdfs,
             'total_excel_lines': sum(
-                excel.get('line_count', 0) 
-                for excel in results.get('matches', []) + results.get('discrepancies', [])
-                if excel.get('excel_line_count')
+                len(excel.get('raw_lines', [])) 
+                for excel in [results.get('matches', []), results.get('discrepancies', [])]
+                for item in excel
+                if 'excel_line_count' in item
             ),
             'total_excel_orders': total_excel,
             
@@ -1084,14 +958,14 @@ class ReconciliationEngine:
             total_amount = results.get('totals', {}).get('total_pdf_amount', 1)
             discrepancy_rate = (avg_discrepancy / total_amount) * 100 if total_amount > 0 else 0
             
-            if discrepancy_rate <= 1:  # Moins de 1% d'écart moyen
+            if discrepancy_rate <= 1:
                 quality_score += 20
-            elif discrepancy_rate <= 5:  # Moins de 5%
+            elif discrepancy_rate <= 5:
                 quality_score += 15
-            elif discrepancy_rate <= 10:  # Moins de 10%
+            elif discrepancy_rate <= 10:
                 quality_score += 10
         else:
-            quality_score += 20  # Pas d'écarts = parfait
+            quality_score += 20
         
         # 10 points pour la confiance moyenne
         if results.get('match_details'):
@@ -1171,24 +1045,31 @@ class ReconciliationEngine:
 def test_reconciliation_engine():
     """Test du moteur de rapprochement"""
     
-    # Données de test
+    # Données de test basées sur vos exemples réels
     test_pdf_data = [
         {
             'success': True,
             'filename': 'test1.pdf',
-            'purchase_order': '5600013960',
-            'total_net': 1000.50,
-            'invoice_id': '5118S0001',
-            'supplier': 'Randstad',
-            'invoice_date': '2025/09/22'
+            'purchase_order': '5600025054',
+            'total_net': 9.84,
+            'invoice_id': '4949S0001',
+            'supplier': 'Select T.T',
+            'invoice_date': '2025/03/10',
+            'main_reference': '4949_65744',
+            'invoice_references': [{
+                'batch_id': '4949',
+                'assignment_id': '65744',
+                'reference_key': '4949_65744'
+            }]
         }
     ]
     
     test_excel_data = [
         {
             'is_valid': True,
-            'order_number': '5600013960',
-            'net_amount': 1000.50,
+            'order_number': '5600025054',
+            'net_amount': 9.84,
+            'cost_center': '0025033402',
             'collaborator': 'Test User',
             'source_filename': 'test.xlsx'
         }
@@ -1198,7 +1079,7 @@ def test_reconciliation_engine():
     engine = ReconciliationEngine()
     results = engine.perform_reconciliation(test_pdf_data, test_excel_data)
     
-    print("Test rapprochement:")
+    print("Test rapprochement optimisé:")
     print(f"  Matches: {len(results['matches'])}")
     print(f"  Écarts: {len(results['discrepancies'])}")
     print(f"  Taux réussite: {results['summary']['matching_rate']:.1f}%")
@@ -1208,3 +1089,65 @@ def test_reconciliation_engine():
 if __name__ == "__main__":
     # Test du module si exécuté directement
     test_reconciliation_engine()
+                            'amount_difference': amount_diff,
+                            'amount_percentage': (amount_diff / pdf.get('total_net', 1)) * 100,
+                            'order_similarity': similarity
+                        },
+                        metadata={
+                            'match_timestamp': datetime.now().isoformat(),
+                            'similarity_threshold': self.config['fuzzy_threshold']
+                        }
+                    )
+        
+        return best_match
+    
+    def try_amount_fuzzy_match(self, pdf: Dict[str, Any], 
+                              excel_data: Dict[str, Dict[str, Any]], 
+                              available_orders: List[str]) -> Optional[MatchResult]:
+        """
+        Tente un rapprochement par montant approximatif
+        """
+        pdf_amount = pdf.get('total_net', 0)
+        if pdf_amount <= 0:
+            return None
+        
+        best_match = None
+        best_confidence = 0
+        
+        # Tolérance élargie pour le fuzzy matching
+        extended_tolerance = pdf_amount * (self.config['tolerance'] * 5)
+        
+        for excel_order_key in available_orders:
+            excel_order = excel_data[excel_order_key]
+            excel_amount = excel_order['total_amount']
+            
+            amount_diff = abs(pdf_amount - excel_amount)
+            
+            if amount_diff <= extended_tolerance:
+                # Confiance basée sur la proximité des montants
+                confidence = 1.0 - (amount_diff / extended_tolerance)
+                
+                # Bonus si dates cohérentes
+                if self.dates_are_coherent(pdf, excel_order):
+                    confidence *= 1.2  # Boost de 20%
+                
+                # Bonus si fournisseurs cohérents
+                if self.suppliers_are_coherent(pdf, excel_order):
+                    confidence *= 1.1  # Boost de 10%
+                
+                confidence = min(1.0, confidence)  # Cap à 1.0
+                
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    
+                    match_type = (MatchType.PERFECT_MATCH 
+                                if amount_diff <= pdf_amount * self.config['tolerance']
+                                else MatchType.DISCREPANCY)
+                    
+                    best_match = MatchResult(
+                        match_type=match_type,
+                        method=MatchMethod.AMOUNT_FUZZY,
+                        confidence=confidence,
+                        pdf_data=pdf,
+                        excel_data=excel_order,
+                        differences={
