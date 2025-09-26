@@ -1,7 +1,7 @@
 """
 EXCEL_PROCESSOR.PY
-Module de traitement des fichiers Excel pour l'application Beeline
-Traitement natif des données Excel/CSV avec Pandas
+Module de traitement des fichiers Excel optimisé pour les données Beeline
+Traitement natif des données Excel/CSV avec Pandas - Version adaptée aux colonnes réelles
 """
 
 import pandas as pd
@@ -14,32 +14,29 @@ import streamlit as st
 
 class ExcelProcessor:
     """
-    Processeur de fichiers Excel spécialisé pour les données Beeline
+    Processeur de fichiers Excel spécialisé pour les données Beeline réelles
     """
     
     def __init__(self):
         self.setup_logging()
         
-        # Configuration des colonnes attendues (flexible)
+        # Configuration des colonnes attendues - adaptée à vos fichiers réels Beeline
         self.expected_columns = {
             'order_number': [
                 'N° commande', 'Numero commande', 'Order Number', 'Purchase Order',
                 'Commande', 'PO', 'Bon de commande'
             ],
+            'cost_center': [
+                'Centre de coût', 'Centre de cout', 'Cost Center', 'Code coût',
+                'Cost Centre', 'Centre', 'CC'
+            ],
             'net_amount': [
                 'Montant net à payer au fournisseur', 'Net Amount', 'Montant Net',
-                'Amount', 'Total', 'Montant'
+                'Amount', 'Total', 'Montant', 'Unités'  # Basé sur votre colonne M
             ],
             'collaborator': [
                 'Collaborateur', 'Employee', 'Worker', 'Nom', 'Name',
                 'Consultant', 'Contractor'
-            ],
-            'statement_date': [
-                'Statement Date', 'Date', 'Invoice Date', 'Billing Date',
-                'Date facture', 'Période'
-            ],
-            'invoice_number': [
-                'Invoice Number', 'N° facture', 'Facture', 'Invoice ID'
             ],
             'supplier': [
                 'Supplier', 'Fournisseur', 'Vendor', 'Company'
@@ -47,20 +44,31 @@ class ExcelProcessor:
             'billing_period': [
                 'Billing Period', 'Période facturation', 'Period', 'Semaine'
             ],
+            'statement_date': [
+                'Statement Date', 'Date', 'Invoice Date', 'Billing Date',
+                'Date facture', 'Période'
+            ],
+            'remit_to': [
+                'Remit To', 'Remit', 'Adresse', 'Address'
+            ],
+            'project': [
+                'Project', 'Projet', 'Code projet'
+            ],
+            'code_rubrique': [
+                'Code rubrique', 'Rubrique', 'Category Code'
+            ],
             'units': [
                 'Unités', 'Units', 'Hours', 'Heures', 'Quantity', 'Quantité'
             ],
             'rate': [
                 'Taux de facturation', 'Rate', 'Unit Price', 'Prix unitaire', 'Hourly Rate'
-            ],
-            'gross_amount': [
-                'Montant brut', 'Gross Amount', 'Total Gross', 'Brut'
             ]
         }
         
         # Configuration de validation
         self.validation_rules = {
-            'order_number': r'^[0-9]{8,12}$',  # 8 à 12 chiffres
+            'order_number': r'^[0-9]{10}$',  # Exactement 10 chiffres
+            'cost_center': r'^[0-9A-Za-z_]{1,15}$',  # Alphanumériques et underscore
             'amount': r'^-?[0-9]+\.?[0-9]*$',   # Nombre décimal (peut être négatif)
             'date': [
                 '%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y', '%Y/%m/%d',
@@ -68,7 +76,7 @@ class ExcelProcessor:
             ]
         }
         
-        # Seuils de validation
+        # Seuils de validation adaptés à vos données
         self.thresholds = {
             'min_amount': -10000,     # Montant minimum (peut être négatif)
             'max_amount': 50000,      # Montant maximum
@@ -86,12 +94,6 @@ class ExcelProcessor:
     def process_excel_file(self, excel_file) -> List[Dict[str, Any]]:
         """
         Traite un fichier Excel/CSV complet
-        
-        Args:
-            excel_file: Fichier Excel uploadé (Streamlit UploadedFile)
-            
-        Returns:
-            Liste des lignes traitées
         """
         try:
             self.logger.info(f"Début traitement Excel: {excel_file.name}")
@@ -123,7 +125,7 @@ class ExcelProcessor:
                 'valid_rows': len([r for r in processed_data if r.get('is_valid', False)]),
                 'columns_found': list(column_mapping.values()),
                 'processing_timestamp': datetime.now().isoformat(),
-                'processor_version': '2.0.0'
+                'processor_version': '2.1.0'
             }
             
             # Ajout des métadonnées à chaque enregistrement
@@ -145,12 +147,6 @@ class ExcelProcessor:
     def read_excel_file(self, excel_file) -> Optional[pd.DataFrame]:
         """
         Lit un fichier Excel/CSV selon son extension
-        
-        Args:
-            excel_file: Fichier à lire
-            
-        Returns:
-            DataFrame pandas ou None
         """
         filename = excel_file.name.lower()
         
@@ -160,8 +156,12 @@ class ExcelProcessor:
                 return self.read_csv_with_detection(excel_file)
             
             elif filename.endswith(('.xlsx', '.xls')):
-                # Lecture Excel
-                return pd.read_excel(excel_file, engine='openpyxl' if filename.endswith('.xlsx') else None)
+                # Lecture Excel avec gestion d'erreurs
+                try:
+                    return pd.read_excel(excel_file, engine='openpyxl')
+                except:
+                    # Fallback pour les anciens formats
+                    return pd.read_excel(excel_file, engine=None)
             
             else:
                 raise ValueError(f"Format de fichier non supporté: {filename}")
@@ -173,12 +173,6 @@ class ExcelProcessor:
     def read_csv_with_detection(self, csv_file) -> pd.DataFrame:
         """
         Lit un CSV avec détection automatique des paramètres
-        
-        Args:
-            csv_file: Fichier CSV
-            
-        Returns:
-            DataFrame pandas
         """
         # Tentatives avec différents délimiteurs
         delimiters = [',', ';', '\t', '|']
@@ -203,7 +197,7 @@ class ExcelProcessor:
                         self.logger.info(f"CSV lu avec succès: délimiteur='{delimiter}', encoding='{encoding}'")
                         return df
                         
-                except Exception as e:
+                except Exception:
                     continue
         
         # Fallback: lecture basique
@@ -213,12 +207,6 @@ class ExcelProcessor:
     def clean_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Nettoie et normalise un DataFrame
-        
-        Args:
-            df: DataFrame à nettoyer
-            
-        Returns:
-            DataFrame nettoyé
         """
         df_cleaned = df.copy()
         
@@ -252,16 +240,9 @@ class ExcelProcessor:
     def is_amount_column(self, col_name: str, series: pd.Series) -> bool:
         """
         Détermine si une colonne contient des montants
-        
-        Args:
-            col_name: Nom de la colonne
-            series: Série pandas
-            
-        Returns:
-            True si c'est une colonne de montants
         """
         # Détection par nom de colonne
-        amount_keywords = ['montant', 'amount', 'total', 'price', 'cost', 'taux', 'rate']
+        amount_keywords = ['montant', 'amount', 'total', 'price', 'cost', 'taux', 'rate', 'unités']
         col_lower = col_name.lower()
         
         if any(keyword in col_lower for keyword in amount_keywords):
@@ -282,12 +263,6 @@ class ExcelProcessor:
     def clean_amount_column(self, series: pd.Series) -> pd.Series:
         """
         Nettoie une colonne de montants
-        
-        Args:
-            series: Série à nettoyer
-            
-        Returns:
-            Série nettoyée et convertie en float
         """
         def parse_amount(val):
             if pd.isna(val):
@@ -329,12 +304,6 @@ class ExcelProcessor:
     def map_columns(self, column_names: List[str]) -> Dict[str, str]:
         """
         Mappe les noms de colonnes trouvés aux noms standardisés
-        
-        Args:
-            column_names: Liste des noms de colonnes du fichier
-            
-        Returns:
-            Dictionnaire de mapping {colonne_fichier: colonne_standard}
         """
         mapping = {}
         
@@ -343,7 +312,7 @@ class ExcelProcessor:
             best_score = 0
             
             for col_name in column_names:
-                if col_name in mapping.values():  # Déjà mappée
+                if col_name in [v for v in mapping.keys()]:  # Déjà mappée
                     continue
                 
                 # Score de correspondance
@@ -361,13 +330,6 @@ class ExcelProcessor:
     def calculate_column_match_score(self, col_name: str, expected_names: List[str]) -> float:
         """
         Calcule un score de correspondance entre un nom de colonne et les noms attendus
-        
-        Args:
-            col_name: Nom de colonne à évaluer
-            expected_names: Liste des noms attendus
-            
-        Returns:
-            Score entre 0 et 1
         """
         col_lower = col_name.lower().strip()
         max_score = 0
@@ -398,13 +360,6 @@ class ExcelProcessor:
     def rename_columns(self, df: pd.DataFrame, mapping: Dict[str, str]) -> pd.DataFrame:
         """
         Renomme les colonnes du DataFrame selon le mapping
-        
-        Args:
-            df: DataFrame à traiter
-            mapping: Dictionnaire de mapping
-            
-        Returns:
-            DataFrame avec colonnes renommées
         """
         df_renamed = df.copy()
         df_renamed = df_renamed.rename(columns=mapping)
@@ -418,12 +373,6 @@ class ExcelProcessor:
     def validate_dataframe(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
         Valide un DataFrame complet
-        
-        Args:
-            df: DataFrame à valider
-            
-        Returns:
-            Résultats de validation
         """
         validation_results = {
             'total_rows': len(df),
@@ -462,13 +411,6 @@ class ExcelProcessor:
     def validate_row(self, row: pd.Series, row_index: int) -> Dict[str, Any]:
         """
         Valide une ligne individuelle
-        
-        Args:
-            row: Ligne à valider
-            row_index: Index de la ligne
-            
-        Returns:
-            Résultats de validation pour la ligne
         """
         validation = {
             'is_valid': True,
@@ -476,18 +418,18 @@ class ExcelProcessor:
             'warnings': []
         }
         
-        # Validation du numéro de commande
+        # Validation du numéro de commande (critique)
         if 'order_number' in row:
             order_validation = self.validate_order_number(row['order_number'])
             if not order_validation['valid']:
                 validation['is_valid'] = False
                 validation['errors'].extend([f"Ligne {row_index}: {err}" for err in order_validation['errors']])
         
-        # Validation du montant
+        # Validation du montant (important mais pas critique)
         if 'net_amount' in row:
             amount_validation = self.validate_amount(row['net_amount'])
             if not amount_validation['valid']:
-                validation['errors'].extend([f"Ligne {row_index}: {err}" for err in amount_validation['errors']])
+                validation['warnings'].extend([f"Ligne {row_index}: {err}" for err in amount_validation['errors']])
         
         # Validation de la date
         if 'statement_date' in row and pd.notna(row['statement_date']):
@@ -500,13 +442,6 @@ class ExcelProcessor:
     def validate_column(self, series: pd.Series, column_name: str) -> Dict[str, Any]:
         """
         Valide une colonne complète
-        
-        Args:
-            series: Colonne à valider
-            column_name: Nom de la colonne
-            
-        Returns:
-            Résultats de validation
         """
         validation = {
             'column_name': column_name,
@@ -522,7 +457,7 @@ class ExcelProcessor:
         for value in series.dropna():
             if column_name == 'order_number':
                 is_valid = self.validate_order_number(value)['valid']
-            elif column_name == 'net_amount':
+            elif column_name in ['net_amount', 'units']:
                 is_valid = self.validate_amount(value)['valid']
             elif column_name == 'statement_date':
                 is_valid = self.validate_date_field(value)['valid']
@@ -551,10 +486,14 @@ class ExcelProcessor:
         
         order_str = str(order_number).strip()
         
-        # Doit être numérique et entre 8-12 chiffres
+        # Suppression des points décimaux pour les nombres Excel (5600002101.0 -> 5600002101)
+        if '.' in order_str and order_str.replace('.', '').replace('0', '').isdigit():
+            order_str = order_str.split('.')[0]
+        
+        # Doit être numérique et exactement 10 chiffres
         if not re.match(self.validation_rules['order_number'], order_str):
             validation['valid'] = False
-            validation['errors'].append(f"Format numéro de commande invalide: {order_str}")
+            validation['errors'].append(f"Format numéro de commande invalide: {order_str} (attendu: 10 chiffres)")
         
         return validation
     
@@ -570,13 +509,12 @@ class ExcelProcessor:
         try:
             amount_float = float(amount)
             
-            # Vérification des seuils
+            # Vérification des seuils - tolérance élargie pour vos données
             if amount_float < self.thresholds['min_amount']:
                 validation['errors'].append(f"Montant trop faible: {amount_float}")
             elif amount_float > self.thresholds['max_amount']:
                 validation['errors'].append(f"Montant trop élevé: {amount_float}")
-            elif amount_float == 0:
-                validation['errors'].append("Montant nul")
+            # Accepter les montants à 0 (contrairement à la version précédente)
                 
         except (ValueError, TypeError):
             validation['valid'] = False
@@ -620,14 +558,6 @@ class ExcelProcessor:
                            validation_results: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Convertit un DataFrame en liste de dictionnaires
-        
-        Args:
-            df: DataFrame à convertir
-            filename: Nom du fichier source
-            validation_results: Résultats de validation
-            
-        Returns:
-            Liste des enregistrements
         """
         records = []
         
@@ -640,7 +570,11 @@ class ExcelProcessor:
                 if pd.isna(value):
                     record[col] = None
                 else:
-                    record[col] = value
+                    # Nettoyage spécial pour les numéros de commande
+                    if col == 'order_number' and isinstance(value, (int, float)):
+                        record[col] = str(int(value))  # Conversion 5600002101.0 -> "5600002101"
+                    else:
+                        record[col] = value
             
             # Métadonnées de la ligne
             record['source_filename'] = filename
@@ -660,12 +594,6 @@ class ExcelProcessor:
     def aggregate_by_order_number(self, excel_data: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """
         Agrège les données Excel par numéro de commande
-        
-        Args:
-            excel_data: Liste des lignes Excel traitées
-            
-        Returns:
-            Dictionnaire aggregé par numéro de commande
         """
         aggregated = {}
         
@@ -685,10 +613,12 @@ class ExcelProcessor:
                     'total_amount': 0,
                     'line_count': 0,
                     'collaborators': [],
+                    'cost_centers': [],  # Nouveau pour vos données
                     'statement_dates': [],
                     'suppliers': [],
                     'source_files': [],
                     'raw_lines': [],
+                    'projects': [],  # Nouveau
                     'validation_summary': {
                         'total_lines': 0,
                         'valid_lines': 0,
@@ -712,6 +642,11 @@ class ExcelProcessor:
             if collaborator and collaborator not in order_data['collaborators']:
                 order_data['collaborators'].append(str(collaborator).strip())
             
+            # Collecte des centres de coût (nouveau)
+            cost_center = record.get('cost_center')
+            if cost_center and cost_center not in order_data['cost_centers']:
+                order_data['cost_centers'].append(str(cost_center).strip())
+            
             # Collecte des dates
             statement_date = record.get('statement_date')
             if statement_date and statement_date not in order_data['statement_dates']:
@@ -721,6 +656,11 @@ class ExcelProcessor:
             supplier = record.get('supplier')
             if supplier and supplier not in order_data['suppliers']:
                 order_data['suppliers'].append(str(supplier).strip())
+            
+            # Collecte des projets (nouveau)
+            project = record.get('project')
+            if project and project not in order_data['projects']:
+                order_data['projects'].append(str(project).strip())
             
             # Fichiers sources
             source_file = record.get('source_filename')
@@ -751,12 +691,6 @@ class ExcelProcessor:
     def get_processing_summary(self, processed_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Génère un résumé du traitement Excel
-        
-        Args:
-            processed_data: Données traitées
-            
-        Returns:
-            Résumé statistique
         """
         total_records = len(processed_data)
         valid_records = sum(1 for r in processed_data if r.get('is_valid', False))
@@ -788,23 +722,25 @@ def test_excel_processor():
     """Fonction de test pour le module Excel"""
     processor = ExcelProcessor()
     
-    # Test de mapping de colonnes
-    test_columns = ['N° commande', 'Montant net à payer au fournisseur', 'Collaborateur']
+    # Test de mapping de colonnes avec vos données réelles
+    test_columns = ['N° commande', 'Centre de coût', 'Collaborateur', 'Supplier', 'Unités']
     mapping = processor.map_columns(test_columns)
     
-    print("Test mapping colonnes:")
+    print("Test mapping colonnes Beeline:")
     for original, mapped in mapping.items():
         print(f"  '{original}' -> '{mapped}'")
     
     # Test de validation d'un numéro de commande
-    test_order = "5600013960"
-    validation = processor.validate_order_number(test_order)
-    print(f"\nTest validation commande '{test_order}': {validation}")
+    test_orders = ["5600002101", "5600002101.0", "invalid"]
+    for test_order in test_orders:
+        validation = processor.validate_order_number(test_order)
+        print(f"Test validation commande '{test_order}': {validation['valid']}")
     
     # Test de nettoyage d'un montant
-    test_amount = "1.234,56"
-    cleaned_series = processor.clean_amount_column(pd.Series([test_amount]))
-    print(f"Test nettoyage montant '{test_amount}' -> {cleaned_series.iloc[0]}")
+    test_amounts = ["1.234,56", "0,75", "0", "-10.5"]
+    for test_amount in test_amounts:
+        cleaned_series = processor.clean_amount_column(pd.Series([test_amount]))
+        print(f"Test montant '{test_amount}' -> {cleaned_series.iloc[0]}")
     
     return mapping
 
