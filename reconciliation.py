@@ -504,9 +504,10 @@ class ReconciliationEngine:
                 if combined_confidence > best_confidence:
                     best_confidence = combined_confidence
                     
-                    amount_diff = abs(pdf.get('total_net', 0) - excel_order['total_amount'])
+                    pdf_amount = pdf.get('total_net', 0)
+                    amount_diff = abs(pdf_amount - excel_order['total_amount'])
                     match_type = (MatchType.PERFECT_MATCH 
-                                if amount_diff <= pdf.get('total_net', 0) * self.config['tolerance']
+                                if amount_diff <= pdf_amount * self.config['tolerance']
                                 else MatchType.DISCREPANCY)
                     
                     best_match = MatchResult(
@@ -517,8 +518,70 @@ class ReconciliationEngine:
                         excel_data=excel_order,
                         differences={
                             'amount_difference': amount_diff,
-                            'amount_percentage': (amount_diff / pdf_amount) * 100,
-                            'extended_tolerance_used': extended_tolerance
+                            'amount_percentage': (amount_diff / pdf_amount) * 100 if pdf_amount > 0 else 0,
+                            'order_similarity': similarity
+                        },
+                        metadata={
+                            'match_timestamp': datetime.now().isoformat(),
+                            'similarity_threshold': self.config['fuzzy_threshold']
+                        }
+                    )
+        
+        return best_match
+    
+    def try_amount_fuzzy_match(self, pdf: Dict[str, Any], 
+                              excel_data: Dict[str, Dict[str, Any]], 
+                              available_orders: List[str]) -> Optional[MatchResult]:
+        """
+        Tente un rapprochement par montant approximatif
+        """
+        pdf_amount = pdf.get('total_net', 0)
+        if pdf_amount <= 0:
+            return None
+        
+        best_match = None
+        best_confidence = 0
+        
+        # Tolérance élargie pour le fuzzy matching
+        extended_tolerance = pdf_amount * (self.config['tolerance'] * 5)
+        
+        for excel_order_key in available_orders:
+            excel_order = excel_data[excel_order_key]
+            excel_amount = excel_order['total_amount']
+            
+            amount_diff = abs(pdf_amount - excel_amount)
+            
+            if amount_diff <= extended_tolerance:
+                # Confiance basée sur la proximité des montants
+                confidence = 1.0 - (amount_diff / extended_tolerance)
+                
+                # Bonus si dates cohérentes
+                if self.dates_are_coherent(pdf, excel_order):
+                    confidence *= 1.2  # Boost de 20%
+                
+                # Bonus si fournisseurs cohérents
+                if self.suppliers_are_coherent(pdf, excel_order):
+                    confidence *= 1.1  # Boost de 10%
+                
+                confidence = min(1.0, confidence)  # Cap à 1.0
+                
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    
+                    match_type = (MatchType.PERFECT_MATCH 
+                                if amount_diff <= pdf_amount * self.config['tolerance']
+                                else MatchType.DISCREPANCY)
+                    
+                    best_match = MatchResult(
+                        match_type=match_type,
+                        method=MatchMethod.AMOUNT_FUZZY,
+                        confidence=confidence,
+                        pdf_data=pdf,
+                        excel_data=excel_order,
+                        differences={
+                            'amount_difference': amount_diff,
+                            'amount_percentage': (amount_diff / pdf_amount) * 100 if pdf_amount > 0 else 0,
+                            'extended_tolerance_used': True
                         },
                         metadata={
                             'match_timestamp': datetime.now().isoformat(),
@@ -1041,6 +1104,7 @@ class ReconciliationEngine:
         
         return recommendations
 
+
 # Fonctions utilitaires pour les tests
 def test_reconciliation_engine():
     """Test du moteur de rapprochement"""
@@ -1089,65 +1153,3 @@ def test_reconciliation_engine():
 if __name__ == "__main__":
     # Test du module si exécuté directement
     test_reconciliation_engine()
-                            'amount_difference': amount_diff,
-                            'amount_percentage': (amount_diff / pdf.get('total_net', 1)) * 100,
-                            'order_similarity': similarity
-                        },
-                        metadata={
-                            'match_timestamp': datetime.now().isoformat(),
-                            'similarity_threshold': self.config['fuzzy_threshold']
-                        }
-                    )
-        
-        return best_match
-    
-    def try_amount_fuzzy_match(self, pdf: Dict[str, Any], 
-                              excel_data: Dict[str, Dict[str, Any]], 
-                              available_orders: List[str]) -> Optional[MatchResult]:
-        """
-        Tente un rapprochement par montant approximatif
-        """
-        pdf_amount = pdf.get('total_net', 0)
-        if pdf_amount <= 0:
-            return None
-        
-        best_match = None
-        best_confidence = 0
-        
-        # Tolérance élargie pour le fuzzy matching
-        extended_tolerance = pdf_amount * (self.config['tolerance'] * 5)
-        
-        for excel_order_key in available_orders:
-            excel_order = excel_data[excel_order_key]
-            excel_amount = excel_order['total_amount']
-            
-            amount_diff = abs(pdf_amount - excel_amount)
-            
-            if amount_diff <= extended_tolerance:
-                # Confiance basée sur la proximité des montants
-                confidence = 1.0 - (amount_diff / extended_tolerance)
-                
-                # Bonus si dates cohérentes
-                if self.dates_are_coherent(pdf, excel_order):
-                    confidence *= 1.2  # Boost de 20%
-                
-                # Bonus si fournisseurs cohérents
-                if self.suppliers_are_coherent(pdf, excel_order):
-                    confidence *= 1.1  # Boost de 10%
-                
-                confidence = min(1.0, confidence)  # Cap à 1.0
-                
-                if confidence > best_confidence:
-                    best_confidence = confidence
-                    
-                    match_type = (MatchType.PERFECT_MATCH 
-                                if amount_diff <= pdf_amount * self.config['tolerance']
-                                else MatchType.DISCREPANCY)
-                    
-                    best_match = MatchResult(
-                        match_type=match_type,
-                        method=MatchMethod.AMOUNT_FUZZY,
-                        confidence=confidence,
-                        pdf_data=pdf,
-                        excel_data=excel_order,
-                        differences={
