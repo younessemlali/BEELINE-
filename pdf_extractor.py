@@ -122,87 +122,7 @@ class PDFExtractor:
                     'tables_count': len(tables_data)
                 }
                 
-                self.logger.info(f"Traitement PDF {i+1}/{len(pdf_files)}: {pdf_file.name}")
-                
-                result = self.extract_single_pdf(pdf_file)
-                result['batch_index'] = i
-                results.append(result)
-                
-            except Exception as e:
-                self.logger.error(f"Erreur traitement PDF {pdf_file.name}: {str(e)}")
-                results.append({
-                    'success': False,
-                    'error': str(e),
-                    'filename': pdf_file.name,
-                    'batch_index': i
-                })
-        
-        return results
-    
-    def get_extraction_summary(self, extraction_results: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Génère un résumé des extractions
-        """
-        total_files = len(extraction_results)
-        successful_extractions = sum(1 for r in extraction_results if r.get('success', False))
-        processable_files = sum(1 for r in extraction_results 
-                               if r.get('data_completeness', {}).get('processable', False))
-        
-        # Analyse des erreurs communes
-        error_types = {}
-        for result in extraction_results:
-            if not result.get('success', True):
-                error = result.get('error', 'Erreur inconnue')
-                error_types[error] = error_types.get(error, 0) + 1
-        
-        # Analyse de la complétude moyenne
-        completeness_scores = [
-            r.get('data_completeness', {}).get('overall_score', 0)
-            for r in extraction_results
-            if r.get('success', False)
-        ]
-        
-        avg_completeness = sum(completeness_scores) / len(completeness_scores) if completeness_scores else 0
-        
-        return {
-            'total_files': total_files,
-            'successful_extractions': successful_extractions,
-            'failed_extractions': total_files - successful_extractions,
-            'processable_files': processable_files,
-            'success_rate': (successful_extractions / total_files) * 100 if total_files > 0 else 0,
-            'processable_rate': (processable_files / total_files) * 100 if total_files > 0 else 0,
-            'average_completeness': avg_completeness,
-            'common_errors': error_types,
-            'extraction_timestamp': datetime.now().isoformat()
-        }
-
-# Fonctions utilitaires pour les tests
-def test_pdf_extractor():
-    """Fonction de test pour le module PDF"""
-    extractor = PDFExtractor()
-    
-    # Test des patterns avec vos données réelles
-    test_text = """
-    Invoice ID/Number: 4949S0001
-    Purchase Order / Bon de commande: 5600025054
-    Invoice Date: 2025/03/10
-    4949_65744_Temporary employees - Expense
-    4950_65744_Temporary employees - Timesheet
-    Invoice Total (EUR): 9.84
-    Supplier: Select T.T
-    """
-    
-    result = extractor.parse_pdf_content(test_text, "test.pdf")
-    print("Test extraction optimisée:")
-    for key, value in result.items():
-        if not key.startswith('raw_text'):
-            print(f"  {key}: {value}")
-    
-    return result
-
-if __name__ == "__main__":
-    # Test du module si exécuté directement
-    test_pdf_extractor()logger.info(f"Extraction réussie: {pdf_file.name}")
+                self.logger.info(f"Extraction réussie: {pdf_file.name}")
                 return extracted_data
                 
         except Exception as e:
@@ -481,7 +401,7 @@ if __name__ == "__main__":
             return False
         
         cell_str = str(cell).strip()
-        # Pattern pour détecter les montants - CORRIGÉ
+        # Pattern pour détecter les montants
         amount_pattern = r'^[0-9,.\s]+$'
         return bool(re.match(amount_pattern, cell_str)) and (',' in cell_str or '.' in cell_str)
     
@@ -491,7 +411,7 @@ if __name__ == "__main__":
             return False
         
         cell_str = str(cell).strip()
-        # Pattern pour quantités simples - CORRIGÉ
+        # Pattern pour quantités simples
         quantity_pattern = r'^[0-9]+(\.[0-9]{1,2})?$'
         return bool(re.match(quantity_pattern, cell_str))
     
@@ -613,7 +533,7 @@ if __name__ == "__main__":
         
         po_str = str(po).strip()
         
-        # Doit contenir exactement 10 chiffres - CORRIGÉ
+        # Doit contenir exactement 10 chiffres
         if not re.match(r'^[0-9]{10}$', po_str):
             validation['valid'] = False
             validation['errors'].append(f"Format numéro de commande incorrect: {po_str} (attendu: 10 chiffres)")
@@ -631,7 +551,7 @@ if __name__ == "__main__":
         
         id_str = str(invoice_id).strip()
         
-        # Doit contenir au moins 4 caractères alphanumériques - CORRIGÉ
+        # Doit contenir au moins 4 caractères alphanumériques
         if len(id_str) < 4 or not re.match(r'^[A-Z0-9]+$', id_str):
             validation['valid'] = False
             validation['errors'].append(f"Format ID facture suspect: {id_str}")
@@ -729,4 +649,85 @@ if __name__ == "__main__":
         
         for i, pdf_file in enumerate(pdf_files):
             try:
-                self.
+                self.logger.info(f"Traitement PDF {i+1}/{len(pdf_files)}: {pdf_file.name}")
+                
+                result = self.extract_single_pdf(pdf_file)
+                result['batch_index'] = i
+                results.append(result)
+                
+            except Exception as e:
+                self.logger.error(f"Erreur traitement PDF {pdf_file.name}: {str(e)}")
+                results.append({
+                    'success': False,
+                    'error': str(e),
+                    'filename': pdf_file.name,
+                    'batch_index': i
+                })
+        
+        return results
+    
+    def get_extraction_summary(self, extraction_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Génère un résumé des extractions
+        """
+        total_files = len(extraction_results)
+        successful_extractions = sum(1 for r in extraction_results if r.get('success', False))
+        processable_files = sum(1 for r in extraction_results 
+                               if r.get('data_completeness', {}).get('processable', False))
+        
+        # Analyse des erreurs communes
+        error_types = {}
+        for result in extraction_results:
+            if not result.get('success', True):
+                error = result.get('error', 'Erreur inconnue')
+                error_types[error] = error_types.get(error, 0) + 1
+        
+        # Analyse de la complétude moyenne
+        completeness_scores = [
+            r.get('data_completeness', {}).get('overall_score', 0)
+            for r in extraction_results
+            if r.get('success', False)
+        ]
+        
+        avg_completeness = sum(completeness_scores) / len(completeness_scores) if completeness_scores else 0
+        
+        return {
+            'total_files': total_files,
+            'successful_extractions': successful_extractions,
+            'failed_extractions': total_files - successful_extractions,
+            'processable_files': processable_files,
+            'success_rate': (successful_extractions / total_files) * 100 if total_files > 0 else 0,
+            'processable_rate': (processable_files / total_files) * 100 if total_files > 0 else 0,
+            'average_completeness': avg_completeness,
+            'common_errors': error_types,
+            'extraction_timestamp': datetime.now().isoformat()
+        }
+
+
+# Fonctions utilitaires pour les tests
+def test_pdf_extractor():
+    """Fonction de test pour le module PDF"""
+    extractor = PDFExtractor()
+    
+    # Test des patterns avec vos données réelles
+    test_text = """
+    Invoice ID/Number: 4949S0001
+    Purchase Order / Bon de commande: 5600025054
+    Invoice Date: 2025/03/10
+    4949_65744_Temporary employees - Expense
+    4950_65744_Temporary employees - Timesheet
+    Invoice Total (EUR): 9.84
+    Supplier: Select T.T
+    """
+    
+    result = extractor.parse_pdf_content(test_text, "test.pdf")
+    print("Test extraction optimisée:")
+    for key, value in result.items():
+        if not key.startswith('raw_text'):
+            print(f"  {key}: {value}")
+    
+    return result
+
+if __name__ == "__main__":
+    # Test du module si exécuté directement
+    test_pdf_extractor()
