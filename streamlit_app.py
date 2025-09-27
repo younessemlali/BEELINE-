@@ -4,7 +4,6 @@ import pdfplumber
 import unidecode
 from rapidfuzz import fuzz
 import jinja2
-import tempfile
 import datetime
 from io import BytesIO
 from openpyxl import Workbook
@@ -93,6 +92,7 @@ def generate_html_report(results, columns, logo_url=None):
                 {% for col in columns %}
                 <th>{{ col }}</th>
                 {% endfor %}
+                <th>Fichier Excel</th>
                 <th>PDF correspondant</th>
                 <th>Ligne PDF</th>
                 <th>Score</th>
@@ -103,6 +103,7 @@ def generate_html_report(results, columns, logo_url=None):
                 {% for col in columns %}
                 <td>{{ row[col] }}</td>
                 {% endfor %}
+                <td>{{ row['Fichier Excel'] }}</td>
                 <td>{{ row['PDF correspondant'] }}</td>
                 <td>{{ row['Ligne PDF correspondante'] }}</td>
                 <td class="{{ 'score-high' if row['Score correspondance'] > 2 else 'score-low' }}">{{ row['Score correspondance'] }}</td>
@@ -122,7 +123,7 @@ def generate_excel_report(df, columns):
     ws.title = "Rapprochement"
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="003366")
-    for col_num, col in enumerate(columns + ["PDF correspondant", "Ligne PDF correspondante", "Score correspondance", "Champs trouvés"], 1):
+    for col_num, col in enumerate(columns + ["Fichier Excel", "PDF correspondant", "Ligne PDF correspondante", "Score correspondance", "Champs trouvés"], 1):
         cell = ws.cell(row=1, column=col_num, value=col)
         cell.font = header_font
         cell.fill = header_fill
@@ -140,43 +141,49 @@ def generate_excel_report(df, columns):
     file_stream.seek(0)
     return file_stream
 
-st.title("Rapprochement Excel ↔ PDF : Application robuste et rapport professionnel")
+st.title("Rapprochement multi-fichiers Excel ↔ PDF : Application robuste et rapport professionnel")
 
 pdf_files = st.file_uploader("Importer un ou plusieurs PDF", type="pdf", accept_multiple_files=True)
-excel_file = st.file_uploader("Importer le fichier Excel", type=["xlsx", "xls"])
+excel_files = st.file_uploader("Importer un ou plusieurs fichiers Excel", type=["xlsx", "xls"], accept_multiple_files=True)
 fuzzy = st.checkbox("Tolérance de rapprochement (fuzzy)", value=True)
 fuzzy_threshold = st.slider("Seuil fuzzy (plus élevé = plus strict)", 70, 100, 85) if fuzzy else 100
 
-if excel_file and pdf_files:
+if excel_files and pdf_files:
     st.info("Traitement en cours...")
-    df = pd.read_excel(excel_file)
+
     columns = ["Collaborateur", "N° commande", "Montant brut", "Montant net à payer au fournisseur", "Montant de la taxe",
                "Taux de facturation", "Code rubrique", "Unités", "Semaine finissant le"]
+
+    # Charger tous les PDF
     parsed_pdfs = []
     for pdf_file in pdf_files:
         lines = extract_pdf_lines(pdf_file)
         parsed_pdfs.append({'filename': pdf_file.name, 'lines': lines})
 
     results = []
-    for idx, row in df.iterrows():
-        best_pdf = ""
-        best_line = ""
-        best_score = -1
-        best_matched = []
-        for pdf in parsed_pdfs:
-            matched_line, score, matched_fields = match_row_to_pdf(row, pdf['lines'], fuzzy, fuzzy_threshold)
-            if score > best_score:
-                best_score = score
-                best_pdf = pdf['filename']
-                best_line = matched_line
-                best_matched = matched_fields
-        results.append({
-            **{col: row.get(col, "") for col in columns},
-            "PDF correspondant": best_pdf if best_score > 0 else "",
-            "Ligne PDF correspondante": best_line,
-            "Score correspondance": best_score,
-            "Champs trouvés": ', '.join(best_matched)
-        })
+
+    for excel_file in excel_files:
+        df = pd.read_excel(excel_file)
+        for idx, row in df.iterrows():
+            best_pdf = ""
+            best_line = ""
+            best_score = -1
+            best_matched = []
+            for pdf in parsed_pdfs:
+                matched_line, score, matched_fields = match_row_to_pdf(row, pdf['lines'], fuzzy, fuzzy_threshold)
+                if score > best_score:
+                    best_score = score
+                    best_pdf = pdf['filename']
+                    best_line = matched_line
+                    best_matched = matched_fields
+            results.append({
+                "Fichier Excel": excel_file.name,
+                **{col: row.get(col, "") for col in columns},
+                "PDF correspondant": best_pdf if best_score > 0 else "",
+                "Ligne PDF correspondante": best_line,
+                "Score correspondance": best_score,
+                "Champs trouvés": ', '.join(best_matched)
+            })
 
     res_df = pd.DataFrame(results)
     st.subheader("Résultats du rapprochement")
