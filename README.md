@@ -1,4 +1,48 @@
-# 🚀 Beeline - Application de Rapprochement PDF/Excel
+# 📄📊 Application Streamlit de Rapprochement PDF/Excel
+
+Une application Streamlit simple pour rapprocher les données entre un fichier PDF et un fichier Excel.
+
+## 🚀 Installation et Exécution
+
+### Prérequis
+- Python 3.7 ou supérieur
+
+### Installation des dépendances
+```bash
+pip install -r requirements.txt
+```
+
+### Lancement de l'application
+```bash
+streamlit run streamlit_app.py
+```
+
+L'application sera accessible à l'adresse : http://localhost:8501
+
+## 📖 Utilisation
+
+1. **Uploadez un fichier PDF** contenant du texte extractible
+2. **Uploadez un fichier Excel** (formats supportés: .xlsx, .xls, .csv)
+3. L'application va automatiquement:
+   - Extraire le texte du PDF
+   - Afficher un aperçu du fichier Excel
+   - Rechercher les valeurs des cellules Excel dans le texte PDF
+   - Afficher les correspondances trouvées
+4. **Téléchargez les résultats** au format CSV
+
+## 🔧 Fonctionnalités
+
+- ✅ Extraction de texte PDF avec `pdfplumber`
+- ✅ Lecture de fichiers Excel (.xlsx, .xls) et CSV
+- ✅ Rapprochement simple basé sur la recherche de chaînes
+- ✅ Interface intuitive avec Streamlit
+- ✅ Aperçu des données avant traitement
+- ✅ Export des résultats en CSV
+- ✅ Statistiques de rapprochement
+
+---
+
+# 🚀 Version Avancée - Beeline
 
 Une application web moderne pour le rapprochement automatique entre factures PDF et données Excel détaillées.
 
