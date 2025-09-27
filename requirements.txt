@@ -4,3 +4,5 @@ pandas
 openpyxl
 unidecode
 rapidfuzz
+jinja2
+weasyprint
