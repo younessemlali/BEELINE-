@@ -27,32 +27,36 @@ def extract_pdf_lines(pdf_file):
         return []
 
 def extract_invoice_info(pdf_lines):
-    # Recherche du numéro de facture et du total net dans le PDF (synthèse)
     invoice_id = ""
     net_total = None
+
+    # 1. Extraction du numéro de facture : ligne juste après "Invoice ID/Number / Numéro"
     for i, line in enumerate(pdf_lines):
-        # Recherche du numéro de facture
-        if "invoice id" in normalize(line) or "numéro" in normalize(line):
-            # Exemple : "Invoice ID/Number / Numéro 4949S0001"
-            parts = line.split()
-            for part in parts:
-                # Prend le premier qui ressemble à un numéro de facture (lettre+chiffre)
-                if any(c.isdigit() for c in part) and any(c.isalpha() for c in part):
-                    invoice_id = part.strip()
+        norm_line = normalize(line)
+        if "invoice id/number" in norm_line or "numéro" in norm_line:
+            # Prend la prochaine ligne non vide comme numéro de facture
+            for j in range(i + 1, len(pdf_lines)):
+                next_line = pdf_lines[j].strip()
+                if next_line:
+                    invoice_id = next_line
                     break
-        # Recherche du total net
-        if "invoice total" in normalize(line):
+            break
+
+    # 2. Extraction du total net (sur ligne "Invoice Total")
+    for line in pdf_lines:
+        norm_line = normalize(line)
+        if "invoice total" in norm_line:
             # Exemple : "Invoice Total(EUR) 9.84 1.98 11.82"
             parts = line.replace(",", ".").split()
-            # Cherche le premier nombre après le titre
             for idx, p in enumerate(parts):
                 if "total" in normalize(p):
-                    # Les 3 suivants sont net, tva, brut
                     try:
                         net_total = float(parts[idx + 1])
                     except:
                         pass
                     break
+            break
+
     return invoice_id, net_total
 
 def match_row_to_pdf(row, pdf_lines, fuzzy=True, fuzzy_threshold=85):
