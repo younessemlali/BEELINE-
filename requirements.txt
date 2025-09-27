@@ -1,5 +1,4 @@
-# Requirements for simple Streamlit PDF/Excel reconciliation app
 streamlit
+pdfplumber
 pandas
 openpyxl
-pdfplumber
