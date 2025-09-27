@@ -117,13 +117,13 @@ def generate_html_report(results, columns, logo_url=None):
     """)
     return template.render(results=results, columns=columns, logo_url=logo_url, now=datetime.datetime.now().strftime("%d/%m/%Y %H:%M"))
 
-def generate_excel_report(df, columns):
+def generate_excel_report(df, excel_columns):
     wb = Workbook()
     ws = wb.active
     ws.title = "Rapprochement"
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="003366")
-    for col_num, col in enumerate(columns + ["Fichier Excel", "PDF correspondant", "Ligne PDF correspondante", "Score correspondance", "Champs trouvés"], 1):
+    for col_num, col in enumerate(excel_columns, 1):
         cell = ws.cell(row=1, column=col_num, value=col)
         cell.font = header_font
         cell.fill = header_fill
@@ -153,6 +153,7 @@ if excel_files and pdf_files:
 
     columns = ["Collaborateur", "N° commande", "Montant brut", "Montant net à payer au fournisseur", "Montant de la taxe",
                "Taux de facturation", "Code rubrique", "Unités", "Semaine finissant le"]
+    excel_columns = columns + ["Fichier Excel", "PDF correspondant", "Ligne PDF correspondante", "Score correspondance", "Champs trouvés"]
 
     # Charger tous les PDF
     parsed_pdfs = []
@@ -177,8 +178,8 @@ if excel_files and pdf_files:
                     best_line = matched_line
                     best_matched = matched_fields
             results.append({
-                "Fichier Excel": excel_file.name,
                 **{col: row.get(col, "") for col in columns},
+                "Fichier Excel": excel_file.name,
                 "PDF correspondant": best_pdf if best_score > 0 else "",
                 "Ligne PDF correspondante": best_line,
                 "Score correspondance": best_score,
@@ -186,6 +187,9 @@ if excel_files and pdf_files:
             })
 
     res_df = pd.DataFrame(results)
+    # Forcer l'ordre des colonnes dans le DataFrame selon excel_columns
+    res_df = res_df[excel_columns]
+
     st.subheader("Résultats du rapprochement")
     st.dataframe(res_df, use_container_width=True)
 
@@ -225,7 +229,7 @@ if excel_files and pdf_files:
     )
 
     st.subheader("📊 Générer un beau rapport Excel (formaté)")
-    excel_file_bytes = generate_excel_report(filtered, columns)
+    excel_file_bytes = generate_excel_report(filtered, excel_columns)
     st.download_button(
         label="Télécharger le rapport Excel",
         data=excel_file_bytes,
