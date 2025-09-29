@@ -15,6 +15,31 @@ def normalize(s):
         return ""
     return unidecode.unidecode(str(s)).replace(" ", "").lower()
 
+def normalize_order_number(order_number):
+    """Normalise strictement un numéro de commande pour le matching.
+    
+    Supprime tous les espaces et caractères spéciaux, convertit en string,
+    normalisation stricte pour uniformiser l'extraction et la comparaison.
+    """
+    if pd.isna(order_number) or order_number is None:
+        return ""
+    
+    # Convertir en string
+    order_str = str(order_number).strip()
+    
+    # Supprimer le .0 d'Excel si présent (ex: 5600025054.0 -> 5600025054)
+    if order_str.endswith('.0'):
+        order_str = order_str[:-2]
+    
+    # Supprimer tous les espaces et caractères spéciaux, ne garder que les chiffres
+    order_clean = re.sub(r'[^0-9]', '', order_str)
+    
+    # Valider que c'est un numéro valide (au moins 8 chiffres)
+    if len(order_clean) >= 8:
+        return order_clean
+    
+    return ""
+
 def extract_pdf_lines(pdf_file):
     try:
         with pdfplumber.open(pdf_file) as pdf:
@@ -28,21 +53,32 @@ def extract_pdf_lines(pdf_file):
         return []
 
 def extract_commande_from_pdf(pdf_lines):
-    """Extrait le numéro de commande depuis les lignes du PDF"""
-    for line in pdf_lines:
-        # Chercher "Purchase Order" ou "Bon de commande"
-        if "purchase order" in normalize(line) or "bon de commande" in normalize(line):
-            # Le numéro est souvent sur la même ligne ou la suivante
-            match = re.search(r'56\d{8}', line)
-            if match:
-                return match.group(0)
-        
-        # Chercher directement un pattern de 10 chiffres commençant par 56
-        match = re.search(r'56\d{8}', line)
-        if match:
-            return match.group(0)
+    """Extrait le numéro de commande depuis les lignes du PDF avec normalisation stricte"""
+    found_orders = []
     
-    return None
+    for line in pdf_lines:
+        # Chercher tous les patterns possibles de numéros de commande
+        # Pattern principal: 56 suivi de 8 chiffres (total 10 chiffres)
+        matches = re.findall(r'56\d{8}', line)
+        found_orders.extend(matches)
+        
+        # Pattern alternatif: 560 suivi de 7 chiffres (total 10 chiffres)
+        matches = re.findall(r'560\d{7}', line)
+        found_orders.extend(matches)
+        
+        # Pattern très général: 10 chiffres commençant par 56
+        matches = re.findall(r'56\d{8}', line)
+        found_orders.extend(matches)
+    
+    # Déduplication et normalisation
+    normalized_orders = []
+    for order in found_orders:
+        normalized = normalize_order_number(order)
+        if normalized and normalized not in normalized_orders:
+            normalized_orders.append(normalized)
+    
+    # Retourner le premier ordre trouvé (ou None si aucun)
+    return normalized_orders[0] if normalized_orders else None
 
 def extract_invoice_info(pdf_lines):
     invoice_id = ""
@@ -247,6 +283,7 @@ pdf_files = st.file_uploader("Importer un ou plusieurs PDF", type="pdf", accept_
 excel_files = st.file_uploader("Importer un ou plusieurs fichiers Excel Beeline", type=["xlsx", "xls"], accept_multiple_files=True)
 fuzzy = st.checkbox("Tolérance de rapprochement (fuzzy)", value=True)
 fuzzy_threshold = st.slider("Seuil fuzzy (plus élevé = plus strict)", 70, 100, 85) if fuzzy else 100
+debug_mode = st.checkbox("🔍 Mode debug - Afficher les numéros de commande extraits", value=False)
 
 if excel_files and pdf_files:
     st.info("Traitement en cours...")
@@ -260,54 +297,104 @@ if excel_files and pdf_files:
     parsed_pdfs = []
     pdf_infos = {}
     pdf_by_commande = {}  # Nouveau: indexer les PDFs par numéro de commande
+    all_pdf_orders = []  # Pour le debug
     
     for pdf_file in pdf_files:
         lines = extract_pdf_lines(pdf_file)
         invoice_id, net_total, commande = extract_invoice_info(lines)
         
+        # Normaliser le numéro de commande
+        commande_normalized = normalize_order_number(commande) if commande else None
+        
         parsed_pdfs.append({'filename': pdf_file.name, 'lines': lines})
         pdf_infos[pdf_file.name] = {
             "Numéro facture": invoice_id,
             "Total net PDF": net_total,
-            "N° Commande": commande
+            "N° Commande": commande_normalized
         }
         
+        # Ajouter à la liste debug
+        if commande_normalized:
+            all_pdf_orders.append(commande_normalized)
+        
         # Indexer par numéro de commande
-        if commande:
-            if commande not in pdf_by_commande:
-                pdf_by_commande[commande] = []
-            pdf_by_commande[commande].append({
+        if commande_normalized:
+            if commande_normalized not in pdf_by_commande:
+                pdf_by_commande[commande_normalized] = []
+            pdf_by_commande[commande_normalized].append({
                 'filename': pdf_file.name,
                 'lines': lines,
                 'invoice_id': invoice_id,
                 'net_total': net_total
             })
-            st.success(f"PDF: {pdf_file.name} → Commande: {commande}")
+            st.success(f"PDF: {pdf_file.name} → Commande: {commande_normalized}")
         else:
             st.warning(f"PDF: {pdf_file.name} → Commande non trouvée")
 
+    # Debug: Affichage des numéros extraits des PDFs
+    if debug_mode and all_pdf_orders:
+        st.info("🔍 **DEBUG - Numéros de commande extraits des PDFs:**")
+        st.write(f"Total: {len(all_pdf_orders)} numéros | Uniques: {len(set(all_pdf_orders))}")
+        st.code(f"Numéros PDF: {sorted(set(all_pdf_orders))}")
+
     st.subheader("Étape 2: Matching intelligent par N° de commande")
     
-    # Étape 2: Grouper les lignes Excel par N° de commande
+    # Étape 2: Grouper les lignes Excel par N° de commande avec normalisation
     excel_by_commande = {}
     all_excel_rows = []
+    all_excel_orders = []  # Pour le debug
     
     for excel_file in excel_files:
         df = pd.read_excel(excel_file)
         for idx, row in df.iterrows():
-            commande = str(row.get("N° commande", "")).strip()
+            # Normaliser le numéro de commande Excel
+            commande_raw = row.get("N° commande", "")
+            commande_normalized = normalize_order_number(commande_raw)
             
             row_data = {
                 'excel_file': excel_file.name,
                 'row': row,
-                'commande': commande
+                'commande': commande_normalized,
+                'idx': idx
             }
             all_excel_rows.append(row_data)
             
-            if commande:
-                if commande not in excel_by_commande:
-                    excel_by_commande[commande] = []
-                excel_by_commande[commande].append(row_data)
+            # Ajouter à la liste debug
+            if commande_normalized:
+                all_excel_orders.append(commande_normalized)
+            
+            if commande_normalized:
+                if commande_normalized not in excel_by_commande:
+                    excel_by_commande[commande_normalized] = []
+                excel_by_commande[commande_normalized].append(row_data)
+
+    # Debug: Affichage des numéros extraits d'Excel
+    if debug_mode and all_excel_orders:
+        st.info("🔍 **DEBUG - Numéros de commande extraits d'Excel:**")
+        st.write(f"Total: {len(all_excel_orders)} numéros | Uniques: {len(set(all_excel_orders))}")
+        st.code(f"Numéros Excel: {sorted(set(all_excel_orders))}")
+        
+        # Comparaison des listes
+        pdf_set = set(all_pdf_orders)
+        excel_set = set(all_excel_orders)
+        common = pdf_set & excel_set
+        pdf_only = pdf_set - excel_set
+        excel_only = excel_set - pdf_set
+        
+        st.info("🔍 **DEBUG - Comparaison des numéros:**")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Correspondances", len(common))
+            if common:
+                st.success(f"Communs: {sorted(common)}")
+        with col2:
+            st.metric("PDF uniquement", len(pdf_only))
+            if pdf_only:
+                st.warning(f"PDF seulement: {sorted(pdf_only)}")
+        with col3:
+            st.metric("Excel uniquement", len(excel_only))
+            if excel_only:
+                st.warning(f"Excel seulement: {sorted(excel_only)}")
 
     # Étape 3: Matching intelligent
     synthese_factures = []
