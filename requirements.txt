@@ -5,3 +5,4 @@ openpyxl
 unidecode
 rapidfuzz
 jinja2
+Pillow
